@@ -1,49 +1,148 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
+import { Link } from 'react-router-dom';
+import { 
+  Flame, Thermometer, Battery, CalendarPlus, History, Info, 
+  AlertTriangle, Settings, Package, ArrowUpRight, Zap
+} from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { AlertTriangle, Info } from 'lucide-react';
-
-const API_BASE_URL = 'http://127.0.0.1:8000';
+import { apiClient } from '../api/client';
+import GasCylinderVisualization from '../components/GasCylinderVisualization';
 
 export default function Dashboard() {
-  const [device, setDevice] = useState<any>(null);
+  const [cylinder, setCylinder] = useState<any>(null);
   const [readings, setReadings] = useState<any[]>([]);
+  const [activeBooking, setActiveBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [recentActivities, setRecentActivities] = useState<any[]>([]);
+
+  const fetchDashboardData = async () => {
+    try {
+      // 1. Get cylinders
+      const cylRes = await apiClient.get('/api/users/cylinders');
+      if (cylRes.data.length > 0) {
+        const primaryCyl = cylRes.data[0];
+        setCylinder(primaryCyl);
+
+        // 2. Get readings
+        const readingsRes = await apiClient.get(`/api/iot/cylinder/${primaryCyl.id}/readings?limit=15`);
+        setReadings(readingsRes.data);
+      }
+
+      // 3. Get bookings and find active ones
+      const bookingsRes = await apiClient.get('/api/bookings');
+      const active = bookingsRes.data.find((b: any) => 
+        ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status)
+      );
+      setActiveBooking(active || null);
+      
+      // Generate activities list
+      const activityList = [];
+      if (cylRes.data.length > 0) {
+        const cyl = cylRes.data[0];
+        activityList.push({
+          title: `Cylinder status: ${cyl.status}`,
+          time: cyl.last_seen ? new Date(cyl.last_seen).toLocaleTimeString() : 'Just now',
+          icon: Flame,
+          color: 'text-sky-400 bg-sky-500/10'
+        });
+      }
+      if (active) {
+        activityList.push({
+          title: `Order ${active.booking_id} status: ${active.status}`,
+          time: new Date(active.updated_at).toLocaleDateString(),
+          icon: Package,
+          color: 'text-amber-400 bg-amber-500/10'
+        });
+      }
+      setRecentActivities(activityList);
+
+    } catch (err) {
+      console.error('Error fetching dashboard data', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [deviceRes, readingsRes] = await Promise.all([
-          axios.get(`${API_BASE_URL}/devices/default`),
-          axios.get(`${API_BASE_URL}/readings/?limit=20`)
-        ]);
-        setDevice(deviceRes.data);
-        setReadings(readingsRes.data);
-      } catch (error) {
-        console.error("Error fetching data", error);
-      } finally {
-        setLoading(false);
+    fetchDashboardData();
+
+    // Setup WebSocket connection for instant update
+    const rawUser = localStorage.getItem('user');
+    if (!rawUser) return;
+    const user = JSON.parse(rawUser);
+
+    const ws = new WebSocket(`ws://127.0.0.1:8000/api/ws/${user.id}`);
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.event === 'cylinder_update') {
+        setCylinder((prev: any) => {
+          if (!prev) return null;
+          // Calculate new estimated days
+          const burn_rate = prev.burn_rate_ema || 0.05;
+          const remaining_gas = Math.max(0.0, data.data.weight - prev.tare_weight);
+          const estimated_days = round(remaining_gas / (burn_rate * 24.0), 1);
+          
+          return {
+            ...prev,
+            current_weight: data.data.weight,
+            current_percent: data.data.percent,
+            temperature: data.data.temperature,
+            status: data.data.status,
+            is_online: data.data.is_online,
+            last_seen: data.data.last_seen,
+            estimated_days
+          };
+        });
+
+        // Add new reading to historical state list
+        setReadings(prev => {
+          const newReading = {
+            id: Date.now().toString(),
+            cylinder_id: cylinder?.id || '',
+            weight: data.data.weight,
+            percent: data.data.percent,
+            temperature: data.data.temperature,
+            timestamp: data.data.last_seen,
+            is_estimated: false
+          };
+          return [newReading, ...prev.slice(0, 14)];
+        });
+      } else if (data.event === 'booking_update') {
+        fetchDashboardData(); // Refresh on booking changes
       }
     };
-    
-    fetchData();
-    // Poll every 10 seconds for real-time updates
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
+
+    return () => {
+      ws.close();
+    };
   }, []);
 
+  const round = (value: number, precision: number) => {
+    const multiplier = Math.pow(10, precision || 0);
+    return Math.round(value * multiplier) / multiplier;
+  };
+
   if (loading) {
-    return <div className="p-8 text-center text-slate-500">Loading live data from cylinder...</div>;
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] gap-4">
+        <div className="h-10 w-10 border-4 border-sky-500 border-t-transparent rounded-full animate-spin" />
+        <span className="text-slate-400 font-medium">Fetching real-time cylinder feeds...</span>
+      </div>
+    );
   }
 
-  // Use real data, or fallback if empty
-  const latestReading = readings.length > 0 ? readings[0] : null;
-  const percent = latestReading ? Math.round(latestReading.percent) : 0;
-  const currentWeight = latestReading ? latestReading.weight.toFixed(2) : (device?.full_weight || 29.2).toFixed(2);
-  const tareWeight = device?.tare_weight || 15.0;
-  const gasWeight = latestReading ? (latestReading.weight - tareWeight).toFixed(2) : ((device?.full_weight || 29.2) - tareWeight).toFixed(2);
-  
-  // Format history for chart (oldest to newest for correct X axis plotting)
+  if (!cylinder) {
+    return (
+      <div className="text-center py-20 bg-slate-850 rounded-3xl border border-slate-800 p-8 max-w-lg mx-auto">
+        <AlertTriangle size={48} className="mx-auto text-amber-500 mb-4" />
+        <h2 className="text-xl font-bold text-slate-100">No Cylinders Found</h2>
+        <p className="text-slate-400 mt-2">There are no active cylinders associated with your account. Please link your ESP32 device or contact support.</p>
+      </div>
+    );
+  }
+
+  // Format Recharts data (reverse list for timeline flow)
   const chartData = [...readings].reverse().map(r => {
     const d = new Date(r.timestamp);
     return {
@@ -53,113 +152,240 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
-      <header>
-        <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Cylinder Status</h1>
-        <p className="text-slate-500 mt-1">Live monitoring of your LPG cylinder capacity and consumption.</p>
+    <div className="space-y-6">
+      
+      {/* Welcome header */}
+      <header className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-black text-slate-100 tracking-tight">Smart Home Dashboard</h2>
+          <p className="text-slate-400 text-xs mt-1">Real-time IoT diagnostics and automatic cylinder replenish controls.</p>
+        </div>
+        <div className="flex items-center gap-3 bg-slate-800/80 border border-slate-700/50 rounded-2xl px-4 py-2 text-xs">
+          <span className={`h-2 w-2 rounded-full ${cylinder.is_online ? 'bg-green-500 animate-pulse' : 'bg-rose-500'}`} />
+          <span className="font-bold text-slate-300">
+            {cylinder.is_online ? 'IoT LINK: ONLINE' : 'IoT LINK: OFFLINE'}
+          </span>
+        </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      {/* Grid of panels */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Realistic Cylinder View */}
-        <div className="lg:col-span-1 bg-white rounded-3xl shadow-lg border border-slate-100 p-8 flex flex-col items-center relative overflow-hidden">
-          
-          <h2 className="text-lg font-bold text-slate-700 mb-8">Live Capacity</h2>
-          
-          {/* Cylinder CSS Container */}
-          <div className="relative w-40 h-80 flex flex-col items-center">
-            <div className="w-16 h-8 border-4 border-red-500 rounded-t-xl z-10 flex justify-center -mb-2">
-              <div className="w-6 h-6 bg-slate-300 rounded-full mt-2 shadow-inner"></div>
-            </div>
-            
-            <div className="relative w-full flex-1 bg-red-600 rounded-[40px] shadow-[inset_-15px_0_30px_rgba(0,0,0,0.2),inset_15px_0_30px_rgba(255,255,255,0.4)] overflow-hidden border-2 border-red-700">
-              <div className="absolute top-1/4 w-full h-8 bg-white opacity-90 shadow-sm z-20"></div>
-
-              <div 
-                className="absolute bottom-0 w-full transition-all duration-1000 ease-out bg-gradient-to-t from-blue-600 to-blue-400 opacity-90"
-                style={{ height: `${percent}%` }}
-              >
-                <div className="absolute top-0 w-full h-4 bg-blue-300 opacity-50 rounded-[50%] -mt-2 shadow-[0_0_10px_rgba(255,255,255,0.5)]"></div>
-              </div>
-
-              <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white to-transparent opacity-20 pointer-events-none"></div>
-
-              <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none drop-shadow-md">
-                <span className="text-4xl font-black text-white mix-blend-overlay">{percent}%</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-8 w-full bg-slate-50 rounded-xl p-4 border border-slate-100">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm text-slate-500 font-medium">Gross Weight</span>
-              <span className="text-sm font-bold text-slate-700">{currentWeight} kg</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-slate-500 font-medium">Net Gas</span>
-              <span className="text-sm font-bold text-brand-600">{Math.max(0, parseFloat(gasWeight)).toFixed(2)} kg</span>
-            </div>
-          </div>
-          
-          {percent <= 15 && (
-            <div className="mt-4 w-full flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-xl text-sm font-semibold border border-red-100 shadow-sm">
-              <AlertTriangle size={20} className="shrink-0" />
-              Low Gas Warning. Auto-booking triggered.
-            </div>
-          )}
+        {/* Left Column: 3D Visualization */}
+        <div className="lg:col-span-1">
+          <GasCylinderVisualization 
+            gasLevel={cylinder.current_percent}
+            weight={cylinder.current_weight}
+            status={cylinder.status}
+            isConnected={cylinder.is_online}
+          />
         </div>
 
-        {/* Info & Chart Cards */}
-        <div className="lg:col-span-2 space-y-8">
+        {/* Center/Right Column: Detailed Statuses */}
+        <div className="lg:col-span-2 space-y-6">
           
-          <div className={`bg-white rounded-3xl shadow-md border border-slate-100 p-6 flex items-start gap-4 ${device?.is_online ? '' : 'opacity-80'}`}>
-            <div className={`p-3 rounded-full ${device?.is_online ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>
-              <Info size={24} />
+          {/* Main Hero Diagnostics Info */}
+          <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 grid grid-cols-1 md:grid-cols-3 gap-6 shadow-md relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-sky-500/5 rounded-full blur-xl pointer-events-none" />
+            
+            {/* Box 1: Estimated Days */}
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-sky-500/10 rounded-2xl text-sky-400 shrink-0">
+                <Battery size={22} className="animate-pulse" />
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-semibold">Remaining Gas</span>
+                <span className="text-xl font-bold text-slate-100 block mt-1">
+                  {cylinder.estimated_days ? `${cylinder.estimated_days} Days` : 'Estimating...'}
+                </span>
+                <p className="text-[10px] text-slate-500 mt-1">Based on hourly usage</p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-bold text-slate-800 text-lg">
-                {device?.is_online ? 'System Online' : 'System Offline (Estimating)'}
-              </h3>
-              <p className="text-slate-500 text-sm mt-1">
-                {device?.is_online 
-                  ? 'Your device is actively monitoring the cylinder. It will automatically book a refill when the gas level drops below 15%.'
-                  : 'Your device is offline. The system is using Machine Learning to estimate your current gas level based on your historical burn rate.'}
-              </p>
+
+            {/* Box 2: Temperature */}
+            <div className="flex items-start gap-4 border-t md:border-t-0 md:border-l border-slate-800 pt-4 md:pt-0 md:pl-6">
+              <div className="p-3 bg-rose-500/10 rounded-2xl text-rose-400 shrink-0">
+                <Thermometer size={22} />
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-semibold">Ambient Temp</span>
+                <span className="text-xl font-bold text-slate-100 block mt-1">{cylinder.temperature.toFixed(1)}°C</span>
+                <p className="text-[10px] text-slate-500 mt-1">LPG safety threshold OK</p>
+              </div>
+            </div>
+
+            {/* Box 3: Last Sync */}
+            <div className="flex items-start gap-4 border-t md:border-t-0 md:border-l border-slate-800 pt-4 md:pt-0 md:pl-6">
+              <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-400 shrink-0">
+                <Zap size={22} />
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-semibold">Last Synchronized</span>
+                <span className="text-xs font-bold text-slate-200 block mt-2">
+                  {cylinder.last_seen ? new Date(cylinder.last_seen).toLocaleTimeString() : 'Never'}
+                </span>
+                <span className="text-[9px] text-slate-500 mt-1 block">Online via Wi-Fi</span>
+              </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-3xl shadow-lg border border-slate-100 p-8">
-            <h3 className="font-bold text-slate-800 text-xl mb-6">Consumption History</h3>
-            <div className="h-72">
+          {/* Active Booking status card */}
+          {activeBooking ? (
+            <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden shadow-md">
+              <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-amber-500" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <Package className="text-amber-400 animate-bounce" size={18} />
+                  <span className="font-bold text-sm text-slate-100">Refill Request In-Progress</span>
+                </div>
+                <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+                  Booking ID <code className="text-sky-400 font-mono text-[11px]">{activeBooking.booking_id}</code> is currently: <span className="font-bold text-slate-200">{activeBooking.status}</span>.
+                </p>
+              </div>
+              <Link 
+                to={`/bookings`} 
+                className="px-4 py-2 bg-slate-800 border border-slate-700/50 hover:bg-slate-7.5 text-xs text-sky-400 font-bold rounded-xl flex items-center gap-1 cursor-pointer transition-all"
+              >
+                Track Booking
+                <ArrowUpRight size={14} />
+              </Link>
+            </div>
+          ) : cylinder.current_percent <= 20.0 ? (
+            <div className="bg-gradient-to-r from-red-950/40 to-slate-850 border border-red-900/30 rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden shadow-lg animate-pulse">
+              <div>
+                <div className="flex items-center gap-2 text-rose-400">
+                  <AlertTriangle size={18} />
+                  <span className="font-bold text-sm">Action Required: Cylinder Low</span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1.5">
+                  Capacity is currently at {cylinder.current_percent.toFixed(1)}%. Order a replacement before depleting resources.
+                </p>
+              </div>
+              <Link 
+                to="/book" 
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-xs text-white font-bold rounded-xl flex items-center gap-1 cursor-pointer shadow-lg shadow-rose-600/20"
+              >
+                Book Cylinder Now
+                <CalendarPlus size={14} />
+              </Link>
+            </div>
+          ) : null}
+
+          {/* Recharts history capacity line chart */}
+          <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="font-bold text-slate-100 text-base">Capacity Logs</h3>
+                <p className="text-[10px] text-slate-500">Gas level variations inside the load cell over time</p>
+              </div>
+              <Link to="/usage" className="text-sky-400 hover:text-sky-300 font-semibold text-xs flex items-center gap-1">
+                View History
+                <History size={14} />
+              </Link>
+            </div>
+
+            <div className="h-60 w-full">
               {chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
-                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dx={-10} domain={[0, 100]} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                    <XAxis 
+                      dataKey="time" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{fill: '#64748b', fontSize: 10}} 
+                      dy={10} 
+                    />
+                    <YAxis 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{fill: '#64748b', fontSize: 10}} 
+                      dx={-10} 
+                      domain={[0, 100]} 
+                    />
                     <Tooltip 
-                      contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}}
+                      contentStyle={{backgroundColor: '#1e293b', borderRadius: '12px', border: '1px solid #334155', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.3)', color: '#fff'}}
                     />
                     <Line 
                       type="monotone" 
                       dataKey="percent" 
                       stroke="#0ea5e9" 
-                      strokeWidth={4} 
-                      dot={{r: 5, fill: '#0ea5e9', strokeWidth: 2, stroke: '#fff'}} 
-                      activeDot={{r: 8, strokeWidth: 0}}
+                      strokeWidth={3} 
+                      dot={{r: 4, fill: '#0284c7', strokeWidth: 1.5, stroke: '#fff'}} 
+                      activeDot={{r: 6, strokeWidth: 0}}
                     />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex items-center justify-center text-slate-400">
-                  No readings recorded yet. Connect your ESP32 to start monitoring!
+                <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2">
+                  <Info size={28} className="text-slate-600" />
+                  <span className="text-xs">No metrics saved yet. Ingest ESP32 feeds.</span>
                 </div>
               )}
             </div>
           </div>
-          
+
         </div>
+
       </div>
+
+      {/* Footer section: Quick Actions & Activities */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        {/* Box 1: Quick Actions */}
+        <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 md:col-span-1">
+          <h3 className="font-bold text-slate-100 text-sm mb-4">Quick Actions</h3>
+          <div className="grid grid-cols-1 gap-2.5">
+            <Link 
+              to="/book" 
+              className="w-full flex items-center justify-between p-3.5 bg-slate-800/60 border border-slate-700/40 rounded-2xl hover:bg-slate-7.5 hover:border-slate-650 transition-all font-medium text-xs cursor-pointer text-slate-200"
+            >
+              <span className="flex items-center gap-2">
+                <CalendarPlus className="text-sky-400" size={16} />
+                Order Cylinder Refill
+              </span>
+              <ArrowUpRight size={14} className="text-slate-500" />
+            </Link>
+            <Link 
+              to="/settings" 
+              className="w-full flex items-center justify-between p-3.5 bg-slate-800/60 border border-slate-700/40 rounded-2xl hover:bg-slate-7.5 hover:border-slate-650 transition-all font-medium text-xs cursor-pointer text-slate-200"
+            >
+              <span className="flex items-center gap-2">
+                <Settings className="text-sky-400" size={16} />
+                Calibrate Calibration Weights
+              </span>
+              <ArrowUpRight size={14} className="text-slate-500" />
+            </Link>
+          </div>
+        </div>
+
+        {/* Box 2: Recent Activity Timeline */}
+        <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 md:col-span-2">
+          <h3 className="font-bold text-slate-100 text-sm mb-4">Recent Activity</h3>
+          <div className="space-y-4">
+            {recentActivities.length === 0 ? (
+              <p className="text-slate-500 text-xs">No updates to report.</p>
+            ) : (
+              recentActivities.map((act, idx) => {
+                const Icon = act.icon;
+                return (
+                  <div key={idx} className="flex justify-between items-start gap-4 text-xs">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-xl shrink-0 ${act.color}`}>
+                        <Icon size={14} />
+                      </div>
+                      <span className="font-semibold text-slate-200">{act.title}</span>
+                    </div>
+                    <span className="text-[10px] text-slate-600 font-bold shrink-0">{act.time}</span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+      </div>
+
     </div>
   );
 }
