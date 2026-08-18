@@ -3,6 +3,7 @@ import {
   ShoppingBag, Search, RefreshCw, X 
 } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { isMockModeEnabled, mockBookingsStore } from '../mock/gasMockData';
 
 export default function BookingsList() {
   const [bookings, setBookings] = useState<any[]>([]);
@@ -12,10 +13,33 @@ export default function BookingsList() {
   
   const fetchBookings = async () => {
     try {
-      const res = await apiClient.get('/api/bookings');
-      setBookings(res.data);
+      let backendBookings: any[] = [];
+      try {
+        const res = await apiClient.get('/api/bookings');
+        backendBookings = res.data;
+      } catch (err) {
+        console.error('Failed to fetch backend bookings', err);
+      }
+
+      if (isMockModeEnabled()) {
+        const mocks = mockBookingsStore.get();
+        const merged = [...backendBookings];
+        mocks.forEach((mb: any) => {
+          if (!merged.some(b => b.booking_id === mb.booking_id)) {
+            merged.push(mb);
+          }
+        });
+        // Sort by created_at descending
+        merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        setBookings(merged);
+      } else {
+        setBookings(backendBookings);
+      }
     } catch (err) {
       console.error('Error fetching bookings list', err);
+      if (isMockModeEnabled()) {
+        setBookings(mockBookingsStore.get());
+      }
     } finally {
       setLoading(false);
     }
@@ -23,13 +47,45 @@ export default function BookingsList() {
 
   useEffect(() => {
     fetchBookings();
+
+    let unsubscribe: (() => void) | null = null;
+    if (isMockModeEnabled()) {
+      unsubscribe = mockBookingsStore.subscribe(() => {
+        fetchBookings();
+      });
+    }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   const handleCancel = async (id: string) => {
     if (!window.confirm('Are you sure you want to cancel this booking?')) return;
+
+    if (id.startsWith('booking-mock-') || id === 'booking-demo-1') {
+      const mocks = mockBookingsStore.get();
+      const updated = mocks.map((b: any) => {
+        if (b.id === id) {
+          return {
+            ...b,
+            status: 'Cancelled',
+            updated_at: new Date().toISOString(),
+            timeline: [...b.timeline, { status: 'Cancelled', timestamp: new Date().toISOString() }]
+          };
+        }
+        return b;
+      });
+      mockBookingsStore.set(updated);
+      setBookings(prev => prev.map(b => b.id === id ? updated.find(ub => ub.id === id) : b));
+      if (selectedBooking && selectedBooking.id === id) {
+        setSelectedBooking(updated.find(ub => ub.id === id));
+      }
+      return;
+    }
+
     try {
       const res = await apiClient.patch(`/api/bookings/${id}/cancel`);
-      // Update local state list
       setBookings(prev => prev.map(b => b.id === id ? res.data : b));
       if (selectedBooking && selectedBooking.id === id) {
         setSelectedBooking(res.data);
@@ -122,6 +178,11 @@ export default function BookingsList() {
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-xs text-slate-100">{b.booking_id}</span>
+                        {b.id.startsWith('booking-mock-') && (
+                          <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/25 text-amber-500 text-[8px] font-bold rounded-lg uppercase tracking-wider">
+                            Demo
+                          </span>
+                        )}
                         <span className={`px-2.5 py-0.5 text-[9px] font-bold rounded-full border ${getStatusBadgeClass(b.status)}`}>
                           {b.status}
                         </span>
@@ -148,7 +209,7 @@ export default function BookingsList() {
                         onClick={() => setSelectedBooking(b)}
                         className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-7.5 border border-slate-700/50 text-slate-300 font-bold rounded-xl text-[10px] cursor-pointer"
                       >
-                        Track Order
+                        Details
                       </button>
                     </div>
                   </div>
@@ -158,94 +219,79 @@ export default function BookingsList() {
           )}
         </div>
 
-        {/* Selected Booking tracking details */}
+        {/* Right side: Detailed status tracker */}
         {selectedBooking && (
-          <div className="lg:col-span-1 bg-slate-850 border border-slate-800 rounded-3xl p-6 shadow-xl relative h-fit space-y-6">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-4">
-              <div>
-                <h3 className="font-bold text-slate-100 text-sm">Tracking Timeline</h3>
-                <span className="text-[10px] text-slate-500 font-bold font-mono">{selectedBooking.booking_id}</span>
-              </div>
-              <button 
-                onClick={() => setSelectedBooking(null)}
-                className="text-slate-400 hover:text-slate-200 p-1 bg-slate-800 border border-slate-700/50 rounded-lg"
-              >
-                <X size={16} />
-              </button>
+          <div className="lg:col-span-1 bg-slate-850 border border-slate-800 rounded-3xl p-6 shadow-md h-fit space-y-6 relative">
+            <button 
+              onClick={() => setSelectedBooking(null)}
+              className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 p-1"
+            >
+              <X size={16} />
+            </button>
+
+            <div>
+              <h3 className="font-bold text-slate-100 text-sm">Refill Delivery Track</h3>
+              <p className="text-[10px] text-slate-500 mt-0.5">Order tracker for booking: <code className="text-sky-400 font-mono text-[11px]">{selectedBooking.booking_id}</code></p>
             </div>
 
-            {/* Timeline progression */}
-            <div className="space-y-6 relative pl-6 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-800">
-              
-              {/* Timeline points generator */}
-              {[
-                { status: 'Pending', label: 'Order Registered', desc: 'Booking recorded on platform' },
-                { status: 'Confirmed', label: 'Booking Approved', desc: 'Admin accepted booking' },
-                { status: 'Processing', label: 'Cylinder Prepared', desc: 'Calibrated replacement selected' },
-                { status: 'Out for Delivery', label: 'Out for Delivery', desc: 'Assigned to logistics courier' },
-                { status: 'Delivered', label: 'Delivery Complete', desc: 'Cylinder updated to 100% capacity' },
-              ].map((step, idx) => {
-                const stepEvent = selectedBooking.timeline.find((t: any) => t.status === step.status);
-                const isPassed = !!stepEvent;
-                const isCurrent = selectedBooking.status === step.status;
+            {/* Timeline graphics list */}
+            <div className="relative pl-6 border-l border-slate-800 space-y-6 text-xs">
+              {['Pending', 'Confirmed', 'Processing', 'Out for Delivery', 'Delivered', 'Cancelled'].map((status, index) => {
+                const stepCompleted = selectedBooking.timeline.some((t: any) => t.status === status);
+                const stepTime = selectedBooking.timeline.find((t: any) => t.status === status)?.timestamp;
+                const isCurrentStatus = selectedBooking.status === status;
+                
+                // Don't render Cancelled node if the booking wasn't cancelled
+                if (status === 'Cancelled' && !stepCompleted) return null;
+                // If it is cancelled, hide Out for Delivery & Delivered steps unless they happened
+                if (selectedBooking.status === 'Cancelled' && (status === 'Out for Delivery' || status === 'Delivered') && !stepCompleted) return null;
 
                 return (
-                  <div key={idx} className="relative">
-                    {/* Timeline Node Point */}
-                    <div className={`absolute -left-[21px] top-1.5 h-3.5 w-3.5 rounded-full flex items-center justify-center border-2 transition-all ${
-                      isCurrent 
-                        ? 'bg-sky-500 border-white ring-4 ring-sky-500/20' 
-                        : isPassed 
-                        ? 'bg-sky-500 border-sky-500' 
-                        : 'bg-slate-900 border-slate-800'
-                    }`} />
+                  <div key={index} className="relative">
+                    <div className={`absolute -left-[31px] top-0.5 h-4.5 w-4.5 rounded-full border-2 flex items-center justify-center ${
+                      isCurrentStatus 
+                        ? 'bg-sky-500 border-sky-500 shadow-md shadow-sky-500/20' 
+                        : stepCompleted 
+                        ? 'bg-slate-800 border-slate-700' 
+                        : 'bg-slate-900 border-slate-850'
+                    }`}>
+                      <div className={`h-1.5 w-1.5 rounded-full ${
+                        isCurrentStatus ? 'bg-white' : stepCompleted ? 'bg-sky-500' : 'bg-transparent'
+                      }`} />
+                    </div>
 
-                    <div className="space-y-1">
-                      <h4 className={`text-xs font-bold ${isCurrent ? 'text-sky-400 font-extrabold' : isPassed ? 'text-slate-200' : 'text-slate-500'}`}>
-                        {step.label}
-                      </h4>
-                      <p className="text-[10px] text-slate-500 leading-relaxed">{step.desc}</p>
-                      {stepEvent && (
-                        <span className="text-[9px] text-slate-600 block">
-                          {new Date(stepEvent.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                    <div className="space-y-0.5">
+                      <span className={`font-bold block ${isCurrentStatus ? 'text-sky-400' : stepCompleted ? 'text-slate-200' : 'text-slate-500'}`}>
+                        {status}
+                      </span>
+                      {stepTime && (
+                        <span className="text-[9px] text-slate-500 block">
+                          {new Date(stepTime).toLocaleDateString()} {new Date(stepTime).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
                         </span>
                       )}
                     </div>
                   </div>
                 );
               })}
-
-              {/* Special Cancelled status point in timeline */}
-              {selectedBooking.status === 'Cancelled' && (
-                <div className="relative">
-                  <div className="absolute -left-[21px] top-1.5 h-3.5 w-3.5 rounded-full bg-rose-500 border-white ring-4 ring-rose-500/20" />
-                  <div className="space-y-1">
-                    <h4 className="text-xs font-bold text-rose-400">Order Cancelled</h4>
-                    <p className="text-[10px] text-slate-500">Refund checks handled automatically.</p>
-                  </div>
-                </div>
-              )}
-
             </div>
 
-            {/* Delivery address details */}
-            <div className="pt-4 border-t border-slate-800 text-xs space-y-3">
+            {/* Detailed metadata */}
+            <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 space-y-3.5 text-[11px] leading-relaxed">
               <div>
-                <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Destination Address</span>
-                <span className="text-slate-300 font-medium leading-relaxed">{selectedBooking.delivery_address}</span>
+                <span className="text-slate-500 block uppercase tracking-wider font-semibold text-[8px]">Delivery Address</span>
+                <span className="text-slate-300 font-medium">{selectedBooking.delivery_address}</span>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Contact Phone</span>
-                  <span className="text-slate-300 font-medium font-mono">{selectedBooking.contact_number}</span>
+                  <span className="text-slate-500 block uppercase tracking-wider font-semibold text-[8px]">Phone Contact</span>
+                  <span className="text-slate-300 font-medium">{selectedBooking.contact_number}</span>
                 </div>
                 <div>
-                  <span className="block text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Delivery Type</span>
-                  <span className="text-slate-350 font-bold uppercase">{selectedBooking.delivery_preference}</span>
+                  <span className="text-slate-500 block uppercase tracking-wider font-semibold text-[8px]">Priority Speed</span>
+                  <span className="text-sky-400 font-bold uppercase">{selectedBooking.delivery_preference}</span>
                 </div>
               </div>
             </div>
-
           </div>
         )}
 

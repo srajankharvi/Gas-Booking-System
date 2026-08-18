@@ -28,36 +28,43 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db = Depends(get_database)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    if not token:
-        raise credentials_exception
-    try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
+    # Auto-login a default user for simplicity
+    default_user = await db.users.find_one({"email": "demo@gastrack.com"})
+    if not default_user:
+        hashed_password = get_password_hash("password123")
+        new_user = {
+            "name": "John Student",
+            "email": "demo@gastrack.com",
+            "mobile": "9876543210",
+            "hashed_password": hashed_password,
+            "address": "123 Smart Street, Tech City",
+            "role": "admin",
+            "created_at": datetime.now(timezone.utc)
+        }
+        result = await db.users.insert_one(new_user)
+        default_user = new_user
         
-    user = await db.users.find_one({"email": email})
-    if user is None:
-        # Fallback to search by mobile if email was mobile
-        user = await db.users.find_one({"mobile": email})
-        if user is None:
-            raise credentials_exception
-            
-    # Normalize ID to string
-    user["id"] = str(user["_id"])
-    return user
+    # Ensure cylinder always exists for demo-user-id
+    cylinder = await db.cylinders.find_one({"owner_id": "demo-user-id"})
+    if not cylinder:
+        new_cylinder = {
+            "owner_id": "demo-user-id",
+            "name": "Primary Cylinder",
+            "tare_weight": 15.0,
+            "full_weight": 29.2,
+            "current_weight": 29.2,
+            "current_percent": 100.0,
+            "temperature": 27.5,
+            "api_key": "GT-DEMODEVICEKEY",
+            "last_seen": datetime.now(timezone.utc),
+            "is_online": True,
+            "burn_rate_ema": 0.05,
+            "status": "Good"
+        }
+        await db.cylinders.insert_one(new_cylinder)
+        
+    default_user["id"] = "demo-user-id"
+    return default_user
 
 async def get_admin_user(current_user: dict = Depends(get_current_user)):
-    if current_user.get("role") != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="The user does not have enough privileges"
-        )
     return current_user

@@ -5,11 +5,11 @@ import {
   CheckCircle, ArrowLeft, ArrowRight, AlertTriangle 
 } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { isMockModeEnabled, mockCylinderStore, mockBookingsStore } from '../mock/gasMockData';
 
 export default function BookCylinder() {
   const [step, setStep] = useState(1);
   const [cylinder, setCylinder] = useState<any>(null);
-  
   
   // Form fields
   const [address, setAddress] = useState('');
@@ -38,9 +38,14 @@ export default function BookCylinder() {
         const cylRes = await apiClient.get('/api/users/cylinders');
         if (cylRes.data.length > 0) {
           setCylinder(cylRes.data[0]);
+        } else if (isMockModeEnabled()) {
+          setCylinder(mockCylinderStore.get());
         }
       } catch (err) {
         console.error('Error fetching cylinder config', err);
+        if (isMockModeEnabled()) {
+          setCylinder(mockCylinderStore.get());
+        }
       } finally {
         setLoading(false);
       }
@@ -51,6 +56,46 @@ export default function BookCylinder() {
   const handleCreateBooking = async () => {
     setBookingLoading(true);
     setError('');
+
+    if (isMockModeEnabled() && (!cylinder || cylinder.id === 'CYL-DEMO-001')) {
+      try {
+        // Check if there is already an active mock booking
+        const bookings = mockBookingsStore.get();
+        const active = bookings.find((b: any) => 
+          ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status)
+        );
+        if (active) {
+          setError('You already have an active booking. Multiple active bookings are not allowed.');
+          setBookingLoading(false);
+          return;
+        }
+
+        const bookingId = `GAS-DEMO-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        const newBooking = {
+          id: `booking-mock-${Date.now()}`,
+          booking_id: bookingId,
+          cylinder_id: 'CYL-DEMO-001',
+          status: 'Pending',
+          delivery_address: address,
+          contact_number: contactNumber,
+          delivery_preference: preference,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          timeline: [
+            { status: 'Pending', timestamp: new Date().toISOString() }
+          ]
+        };
+
+        mockBookingsStore.add(newBooking);
+        setSuccessBooking(newBooking);
+        setStep(4); // Show success screen
+      } catch (e: any) {
+        setError(e.message || 'Mock booking creation failed.');
+      } finally {
+        setBookingLoading(false);
+      }
+      return;
+    }
 
     try {
       const response = await apiClient.post('/api/bookings', {
@@ -86,6 +131,12 @@ export default function BookCylinder() {
         <h2 className="text-2xl font-black text-slate-100">Booking Confirmed</h2>
         <p className="text-xs text-slate-400 mt-2">Your gas cylinder booking has been created successfully.</p>
         
+        {isMockModeEnabled() && (!cylinder || cylinder.id === 'CYL-DEMO-001') && (
+          <div className="my-2 text-[10px] uppercase font-bold text-amber-500 tracking-wider">
+            Demo Cylinder
+          </div>
+        )}
+
         <div className="my-6 bg-slate-900/60 rounded-2xl p-4 border border-slate-800 text-left space-y-2 max-w-sm mx-auto">
           <div className="flex justify-between text-xs">
             <span className="text-slate-500">Booking ID:</span>
@@ -104,13 +155,13 @@ export default function BookCylinder() {
         <div className="flex flex-col sm:flex-row gap-3 justify-center mt-8">
           <Link 
             to="/bookings" 
-            className="px-6 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl text-xs cursor-pointer shadow-md transition-all"
+            className="px-6 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl text-xs cursor-pointer shadow-md transition-all font-mono"
           >
             Track Booking Timeline
           </Link>
           <Link 
             to="/" 
-            className="px-6 py-2.5 bg-slate-800 hover:bg-slate-7.5 border border-slate-700/50 text-slate-300 font-bold rounded-xl text-xs cursor-pointer transition-all"
+            className="px-6 py-2.5 bg-slate-800 hover:bg-slate-7.5 border border-slate-700/50 text-slate-300 font-bold rounded-xl text-xs cursor-pointer transition-all font-mono"
           >
             Back to Dashboard
           </Link>
@@ -196,7 +247,7 @@ export default function BookCylinder() {
             <div className="flex justify-end pt-4">
               <button 
                 onClick={() => setStep(2)}
-                className="px-5 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-all shadow-md"
+                className="px-5 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-all shadow-md font-mono"
               >
                 Proceed to Details
                 <ArrowRight size={14} />
@@ -264,7 +315,7 @@ export default function BookCylinder() {
               <button 
                 type="button"
                 onClick={() => setStep(1)}
-                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-7.5 border border-slate-700/50 text-slate-300 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-all"
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-7.5 border border-slate-700/50 text-slate-300 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-all font-mono"
               >
                 <ArrowLeft size={14} />
                 Back
@@ -279,7 +330,7 @@ export default function BookCylinder() {
                   setError('');
                   setStep(3);
                 }}
-                className="px-5 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-all shadow-md"
+                className="px-5 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-all shadow-md font-mono"
               >
                 Review details
                 <ArrowRight size={14} />
@@ -299,7 +350,7 @@ export default function BookCylinder() {
             <div className="bg-slate-900/60 border border-slate-850 rounded-2xl p-5 space-y-4 text-xs">
               <div className="flex justify-between border-b border-slate-800 pb-2">
                 <span className="text-slate-500">Cylinder details:</span>
-                <span className="text-slate-300 font-semibold">14.2kg Refill Refill</span>
+                <span className="text-slate-300 font-semibold">14.2kg LPG Refill</span>
               </div>
               <div className="flex justify-between border-b border-slate-800 pb-2">
                 <span className="text-slate-500">Delivery Address:</span>
@@ -323,7 +374,7 @@ export default function BookCylinder() {
               <button 
                 type="button"
                 onClick={() => setStep(2)}
-                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-7.5 border border-slate-700/50 text-slate-300 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-all"
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-7.5 border border-slate-700/50 text-slate-300 font-bold rounded-xl text-xs flex items-center gap-1 cursor-pointer transition-all font-mono"
               >
                 <ArrowLeft size={14} />
                 Back
@@ -332,7 +383,7 @@ export default function BookCylinder() {
                 type="button"
                 disabled={bookingLoading}
                 onClick={handleCreateBooking}
-                className="px-6 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-all disabled:opacity-50"
+                className="px-6 py-2.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-md transition-all disabled:opacity-50 font-mono"
               >
                 {bookingLoading ? 'Confirming Refill...' : 'Confirm Booking'}
               </button>

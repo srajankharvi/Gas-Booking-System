@@ -7,6 +7,13 @@ import {
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { apiClient } from '../api/client';
 import GasCylinderVisualization from '../components/GasCylinderVisualization';
+import { 
+  mockCylinderStore, 
+  mockHistoricalReadings, 
+  mockBookingsStore,
+  mockActivitiesStore,
+  isMockModeEnabled 
+} from '../mock/gasMockData';
 
 export default function Dashboard() {
   const [cylinder, setCylinder] = useState<any>(null);
@@ -26,13 +33,33 @@ export default function Dashboard() {
         // 2. Get readings
         const readingsRes = await apiClient.get(`/api/iot/cylinder/${primaryCyl.id}/readings?limit=15`);
         setReadings(readingsRes.data);
+      } else if (isMockModeEnabled()) {
+        // Fallback to mock cylinder
+        const mockCyl = mockCylinderStore.get();
+        setCylinder(mockCyl);
+        setReadings(mockHistoricalReadings);
+      } else {
+        setCylinder(null);
+        setReadings([]);
       }
 
       // 3. Get bookings and find active ones
-      const bookingsRes = await apiClient.get('/api/bookings');
-      const active = bookingsRes.data.find((b: any) => 
-        ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status)
-      );
+      let active = null;
+      if (isMockModeEnabled() && (cylRes.data.length === 0)) {
+        const bookings = mockBookingsStore.get();
+        active = bookings.find((b: any) => 
+          ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status)
+        );
+      } else {
+        try {
+          const bookingsRes = await apiClient.get('/api/bookings');
+          active = bookingsRes.data.find((b: any) => 
+            ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status)
+          );
+        } catch (e) {
+          console.error("Failed to fetch backend bookings", e);
+        }
+      }
       setActiveBooking(active || null);
       
       // Generate activities list
@@ -45,7 +72,18 @@ export default function Dashboard() {
           icon: Flame,
           color: 'text-sky-400 bg-sky-500/10'
         });
+      } else if (isMockModeEnabled() && cylRes.data.length === 0) {
+        const currentActivities = mockActivitiesStore.get();
+        currentActivities.forEach((act) => {
+          activityList.push({
+            title: act.title,
+            time: act.time,
+            icon: act.title.includes('level') ? Flame : (act.title.includes('connected') ? Zap : Package),
+            color: act.title.includes('low') ? 'text-rose-400 bg-rose-500/10' : 'text-sky-400 bg-sky-500/10'
+          });
+        });
       }
+
       if (active) {
         activityList.push({
           title: `Order ${active.booking_id} status: ${active.status}`,
@@ -66,6 +104,49 @@ export default function Dashboard() {
   useEffect(() => {
     fetchDashboardData();
 
+    // Subscribe to mock stores if in mock mode
+    let unsubscribeCyl: (() => void) | null = null;
+    let unsubscribeBookings: (() => void) | null = null;
+    let unsubscribeActivities: (() => void) | null = null;
+
+    if (isMockModeEnabled()) {
+      unsubscribeCyl = mockCylinderStore.subscribe(() => {
+        apiClient.get('/api/users/cylinders').then(res => {
+          if (res.data.length === 0) {
+            setCylinder(mockCylinderStore.get());
+          }
+        }).catch(() => {
+          setCylinder(mockCylinderStore.get());
+        });
+      });
+
+      unsubscribeBookings = mockBookingsStore.subscribe(() => {
+        apiClient.get('/api/users/cylinders').then(res => {
+          if (res.data.length === 0) {
+            const bookings = mockBookingsStore.get();
+            const active = bookings.find((b: any) => 
+              ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status)
+            );
+            setActiveBooking(active || null);
+          }
+        });
+      });
+
+      unsubscribeActivities = mockActivitiesStore.subscribe(() => {
+        apiClient.get('/api/users/cylinders').then(res => {
+          if (res.data.length === 0) {
+            const activityList = mockActivitiesStore.get().map((act: any) => ({
+              title: act.title,
+              time: act.time,
+              icon: act.title.includes('level') ? Flame : (act.title.includes('connected') ? Zap : Package),
+              color: act.title.includes('low') ? 'text-rose-400 bg-rose-500/10' : 'text-sky-400 bg-sky-500/10'
+            }));
+            setRecentActivities(activityList);
+          }
+        });
+      });
+    }
+
     // Setup WebSocket connection for instant update
     const rawUser = localStorage.getItem('user');
     if (!rawUser) return;
@@ -77,8 +158,7 @@ export default function Dashboard() {
       const data = JSON.parse(event.data);
       if (data.event === 'cylinder_update') {
         setCylinder((prev: any) => {
-          if (!prev) return null;
-          // Calculate new estimated days
+          if (!prev || prev.id === 'CYL-DEMO-001') return prev;
           const burn_rate = prev.burn_rate_ema || 0.05;
           const remaining_gas = Math.max(0.0, data.data.weight - prev.tare_weight);
           const estimated_days = round(remaining_gas / (burn_rate * 24.0), 1);
@@ -95,26 +175,31 @@ export default function Dashboard() {
           };
         });
 
-        // Add new reading to historical state list
         setReadings(prev => {
-          const newReading = {
-            id: Date.now().toString(),
-            cylinder_id: cylinder?.id || '',
-            weight: data.data.weight,
-            percent: data.data.percent,
-            temperature: data.data.temperature,
-            timestamp: data.data.last_seen,
-            is_estimated: false
-          };
-          return [newReading, ...prev.slice(0, 14)];
+          if (cylinder && cylinder.id !== 'CYL-DEMO-001') {
+            const newReading = {
+              id: Date.now().toString(),
+              cylinder_id: cylinder?.id || '',
+              weight: data.data.weight,
+              percent: data.data.percent,
+              temperature: data.data.temperature,
+              timestamp: data.data.last_seen,
+              is_estimated: false
+            };
+            return [newReading, ...prev.slice(0, 14)];
+          }
+          return prev;
         });
       } else if (data.event === 'booking_update') {
-        fetchDashboardData(); // Refresh on booking changes
+        fetchDashboardData();
       }
     };
 
     return () => {
       ws.close();
+      if (unsubscribeCyl) unsubscribeCyl();
+      if (unsubscribeBookings) unsubscribeBookings();
+      if (unsubscribeActivities) unsubscribeActivities();
     };
   }, []);
 
@@ -145,8 +230,11 @@ export default function Dashboard() {
   // Format Recharts data (reverse list for timeline flow)
   const chartData = [...readings].reverse().map(r => {
     const d = new Date(r.timestamp);
+    const isMock = cylinder?.id === 'CYL-DEMO-001';
     return {
-      time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: isMock 
+        ? d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+        : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       percent: Math.round(r.percent)
     };
   });
@@ -157,13 +245,24 @@ export default function Dashboard() {
       {/* Welcome header */}
       <header className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-black text-slate-100 tracking-tight">Smart Home Dashboard</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-black text-slate-100 tracking-tight">Smart Home Dashboard</h2>
+            {cylinder.id === 'CYL-DEMO-001' && (
+              <span 
+                className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-lg px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider uppercase cursor-help animate-pulse"
+                title="This dashboard is currently displaying simulated IoT data. Connect an ESP32 device to use live sensor data."
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
+                DEMO MODE
+              </span>
+            )}
+          </div>
           <p className="text-slate-400 text-xs mt-1">Real-time IoT diagnostics and automatic cylinder replenish controls.</p>
         </div>
         <div className="flex items-center gap-3 bg-slate-800/80 border border-slate-700/50 rounded-2xl px-4 py-2 text-xs">
           <span className={`h-2 w-2 rounded-full ${cylinder.is_online ? 'bg-green-500 animate-pulse' : 'bg-rose-500'}`} />
           <span className="font-bold text-slate-300">
-            {cylinder.is_online ? 'IoT LINK: ONLINE' : 'IoT LINK: OFFLINE'}
+            {cylinder.id === 'CYL-DEMO-001' ? 'IoT LINK: SIMULATED' : cylinder.is_online ? 'IoT LINK: ONLINE' : 'IoT LINK: OFFLINE'}
           </span>
         </div>
       </header>
@@ -222,9 +321,11 @@ export default function Dashboard() {
               <div>
                 <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-semibold">Last Synchronized</span>
                 <span className="text-xs font-bold text-slate-200 block mt-2">
-                  {cylinder.last_seen ? new Date(cylinder.last_seen).toLocaleTimeString() : 'Never'}
+                  {cylinder.id === 'CYL-DEMO-001' ? 'Just now' : (cylinder.last_seen ? new Date(cylinder.last_seen).toLocaleTimeString() : 'Never')}
                 </span>
-                <span className="text-[9px] text-slate-500 mt-1 block">Online via Wi-Fi</span>
+                <span className="text-[9px] text-slate-500 mt-1 block">
+                  {cylinder.id === 'CYL-DEMO-001' ? 'Live Simulation Active' : 'Online via Wi-Fi'}
+                </span>
               </div>
             </div>
           </div>
@@ -255,7 +356,7 @@ export default function Dashboard() {
               <div>
                 <div className="flex items-center gap-2 text-rose-400">
                   <AlertTriangle size={18} />
-                  <span className="font-bold text-sm">Action Required: Cylinder Low</span>
+                  <span className="font-bold text-sm">Action Required: Cylinder Critical</span>
                 </div>
                 <p className="text-xs text-slate-300 mt-1.5">
                   Capacity is currently at {cylinder.current_percent.toFixed(1)}%. Order a replacement before depleting resources.
@@ -266,6 +367,25 @@ export default function Dashboard() {
                 className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-xs text-white font-bold rounded-xl flex items-center gap-1 cursor-pointer shadow-lg shadow-rose-600/20"
               >
                 Book Cylinder Now
+                <CalendarPlus size={14} />
+              </Link>
+            </div>
+          ) : cylinder.current_percent <= 40.0 ? (
+            <div className="bg-amber-500/5 border border-amber-500/20 rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden shadow-md">
+              <div>
+                <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                  <AlertTriangle size={18} />
+                  <span>⚠ Gas Level Low</span>
+                </div>
+                <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
+                  Your cylinder currently has {cylinder.current_percent.toFixed(1)}% gas remaining. Based on your recent usage, approximately {cylinder.estimated_days} days may remain. Consider booking a new cylinder.
+                </p>
+              </div>
+              <Link 
+                to="/book" 
+                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-xs text-slate-900 font-bold rounded-xl flex items-center gap-1 cursor-pointer transition-all shadow-md shrink-0"
+              >
+                Book New Cylinder
                 <CalendarPlus size={14} />
               </Link>
             </div>
@@ -342,7 +462,27 @@ export default function Dashboard() {
             >
               <span className="flex items-center gap-2">
                 <CalendarPlus className="text-sky-400" size={16} />
-                Order Cylinder Refill
+                Book New Cylinder
+              </span>
+              <ArrowUpRight size={14} className="text-slate-500" />
+            </Link>
+            <Link 
+              to="/usage" 
+              className="w-full flex items-center justify-between p-3.5 bg-slate-800/60 border border-slate-700/40 rounded-2xl hover:bg-slate-7.5 hover:border-slate-650 transition-all font-medium text-xs cursor-pointer text-slate-200"
+            >
+              <span className="flex items-center gap-2">
+                <History className="text-sky-400" size={16} />
+                View Usage History
+              </span>
+              <ArrowUpRight size={14} className="text-slate-500" />
+            </Link>
+            <Link 
+              to="/bookings" 
+              className="w-full flex items-center justify-between p-3.5 bg-slate-800/60 border border-slate-700/40 rounded-2xl hover:bg-slate-7.5 hover:border-slate-650 transition-all font-medium text-xs cursor-pointer text-slate-200"
+            >
+              <span className="flex items-center gap-2">
+                <Package className="text-sky-400" size={16} />
+                View My Bookings
               </span>
               <ArrowUpRight size={14} className="text-slate-500" />
             </Link>
@@ -352,7 +492,7 @@ export default function Dashboard() {
             >
               <span className="flex items-center gap-2">
                 <Settings className="text-sky-400" size={16} />
-                Calibrate Calibration Weights
+                Manage Cylinder
               </span>
               <ArrowUpRight size={14} className="text-slate-500" />
             </Link>
@@ -374,7 +514,12 @@ export default function Dashboard() {
                       <div className={`p-2 rounded-xl shrink-0 ${act.color}`}>
                         <Icon size={14} />
                       </div>
-                      <span className="font-semibold text-slate-200">{act.title}</span>
+                      <div>
+                        <span className="font-semibold text-slate-200 block">{act.title}</span>
+                        {cylinder.id === 'CYL-DEMO-001' && (
+                          <span className="text-[9px] text-slate-500 block mt-0.5">Simulation Data</span>
+                        )}
+                      </div>
                     </div>
                     <span className="text-[10px] text-slate-600 font-bold shrink-0">{act.time}</span>
                   </div>
