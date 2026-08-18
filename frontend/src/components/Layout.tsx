@@ -86,17 +86,20 @@ export default function Layout() {
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  const menuItems = [
-    { name: 'Dashboard', path: '/', icon: Home, roles: ['user', 'admin'] },
-    { name: 'Book Cylinder', path: '/book', icon: Calendar, roles: ['user'] },
-    { name: 'My Bookings', path: '/bookings', icon: Clock, roles: ['user'] },
-    { name: 'Usage History', path: '/usage', icon: BarChart3, roles: ['user'] },
-    { name: 'Settings', path: '/settings', icon: Settings, roles: ['user', 'admin'] },
-    { name: 'Admin Dashboard', path: '/admin', icon: ShieldCheck, roles: ['admin'] },
-    { name: 'IoT Simulator', path: '/simulator', icon: Terminal, roles: ['user', 'admin'] },
-  ];
-
   if (!user) return null;
+
+  const menuItems = user.role === 'admin' ? [
+    { name: 'Admin Dashboard', path: '/admin', icon: ShieldCheck },
+    { name: 'Settings', path: '/admin/settings', icon: Settings },
+    { name: 'IoT Simulator', path: '/admin/simulator', icon: Terminal },
+  ] : [
+    { name: 'Dashboard', path: '/', icon: Home },
+    { name: 'Book Cylinder', path: '/book', icon: Calendar },
+    { name: 'My Bookings', path: '/bookings', icon: Clock },
+    { name: 'Usage History', path: '/usage', icon: BarChart3 },
+    { name: 'Settings', path: '/settings', icon: Settings },
+    { name: 'IoT Simulator', path: '/simulator', icon: Terminal },
+  ];
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-slate-900 text-slate-100 overflow-x-hidden font-sans">
@@ -143,27 +146,25 @@ export default function Layout() {
           
           {/* Nav Links */}
           <nav className="space-y-1.5">
-            {menuItems
-              .filter(item => item.roles.includes(user.role))
-              .map((item, idx) => {
-                const Icon = item.icon;
-                const isActive = location.pathname === item.path;
-                return (
-                  <Link 
-                    key={idx} 
-                    to={item.path}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm border ${
-                      isActive 
-                        ? 'bg-sky-500/10 text-sky-400 border-sky-500/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]' 
-                        : 'text-slate-400 border-transparent hover:bg-slate-800 hover:text-slate-200'
-                    }`}
-                  >
-                    <Icon size={18} />
-                    {item.name}
-                  </Link>
-                );
-              })}
+            {menuItems.map((item, idx) => {
+              const Icon = item.icon;
+              const isActive = location.pathname === item.path;
+              return (
+                <Link 
+                  key={idx} 
+                  to={item.path}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium text-sm border ${
+                    isActive 
+                      ? 'bg-sky-500/10 text-sky-400 border-sky-500/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]' 
+                      : 'text-slate-400 border-transparent hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <Icon size={18} />
+                  {item.name}
+                </Link>
+              );
+            })}
           </nav>
         </div>
 

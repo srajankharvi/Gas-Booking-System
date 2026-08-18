@@ -22,19 +22,30 @@ localStorage.setItem('user', JSON.stringify({
   created_at: new Date().toISOString()
 }));
 
-// Guard for authenticated user views
-const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+// Guard for standard user routes
+const UserRoute = ({ children }: { children: React.ReactNode }) => {
   const token = localStorage.getItem('token');
+  const userStr = localStorage.getItem('user');
+  const user = userStr ? JSON.parse(userStr) : null;
+  
   if (!token) {
     return <Navigate to="/login" replace />;
+  }
+  if (user && user.role === 'admin') {
+    return <Navigate to="/admin" replace />;
   }
   return <>{children}</>;
 };
 
 // Guard for administrator actions
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const token = localStorage.getItem('token');
   const userStr = localStorage.getItem('user');
   const user = userStr ? JSON.parse(userStr) : null;
+  
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
   if (!user || user.role !== 'admin') {
     return <Navigate to="/" replace />;
   }
@@ -52,9 +63,9 @@ function App() {
         <Route 
           path="/" 
           element={
-            <ProtectedRoute>
+            <UserRoute>
               <Layout />
-            </ProtectedRoute>
+            </UserRoute>
           }
         >
           <Route index element={<Dashboard />} />
@@ -62,18 +73,20 @@ function App() {
           <Route path="bookings" element={<BookingsList />} />
           <Route path="usage" element={<UsageHistory />} />
           <Route path="settings" element={<Settings />} />
-          
-          {/* Admin routes protected by role */}
-          <Route 
-            path="admin" 
-            element={
-              <AdminRoute>
-                <AdminDashboard />
-              </AdminRoute>
-            } 
-          />
-          
-          {/* Simulator route */}
+          <Route path="simulator" element={<Simulator />} />
+        </Route>
+
+        {/* Protected Admin Layout */}
+        <Route 
+          path="/admin" 
+          element={
+            <AdminRoute>
+              <Layout />
+            </AdminRoute>
+          }
+        >
+          <Route index element={<AdminDashboard />} />
+          <Route path="settings" element={<Settings />} />
           <Route path="simulator" element={<Simulator />} />
         </Route>
         
