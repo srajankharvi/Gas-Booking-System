@@ -18,7 +18,7 @@ localStorage.setItem('user', JSON.stringify({
   email: 'demo@gastrack.com',
   mobile: '9876543210',
   address: '123 Smart Street, Tech City',
-  role: 'admin',
+  role: 'user',
   created_at: new Date().toISOString()
 }));
 
