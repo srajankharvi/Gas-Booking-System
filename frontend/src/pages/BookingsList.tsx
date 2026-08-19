@@ -77,9 +77,9 @@ export default function BookingsList() {
         return b;
       });
       mockBookingsStore.set(updated);
-      setBookings(prev => prev.map(b => b.id === id ? updated.find(ub => ub.id === id) : b));
+      setBookings(prev => prev.map(b => b.id === id ? updated.find((ub: any) => ub.id === id) : b));
       if (selectedBooking && selectedBooking.id === id) {
-        setSelectedBooking(updated.find(ub => ub.id === id));
+        setSelectedBooking(updated.find((ub: any) => ub.id === id));
       }
       return;
     }

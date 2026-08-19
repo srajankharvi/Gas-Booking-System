@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Terminal, RadioOff, ShieldAlert, Truck, Sparkles, Sliders, ShieldCheck } from 'lucide-react';
+import { Terminal, RadioOff, ShieldAlert, Truck, Sparkles, Sliders } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { isMockModeEnabled, mockCylinderStore, mockBookingsStore } from '../mock/gasMockData';
 
