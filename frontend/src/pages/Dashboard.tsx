@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
-  Flame, Thermometer, Battery, CalendarPlus, History, Info, 
-  AlertTriangle, Settings, Package, ArrowUpRight, Zap
+  Flame, Battery, History, Info, 
+  Package, ArrowUpRight, Zap
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { apiClient } from '../api/client';
 import GasCylinderVisualization from '../components/GasCylinderVisualization';
+import LowGasNotification from '../components/LowGasNotification';
+import IoTSystemStatus from '../components/IoTSystemStatus';
+import { useDeviceStatus } from '../hooks/useDeviceStatus';
 import { 
   mockCylinderStore, 
   mockHistoricalReadings, 
@@ -22,19 +25,18 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
+  // Use the new device status hook
+  const deviceStatus = useDeviceStatus(cylinder?.id);
+
   const fetchDashboardData = async () => {
     try {
-      // 1. Get cylinders
       const cylRes = await apiClient.get('/api/users/cylinders');
       if (cylRes.data.length > 0) {
         const primaryCyl = cylRes.data[0];
         setCylinder(primaryCyl);
-
-        // 2. Get readings
         const readingsRes = await apiClient.get(`/api/iot/cylinder/${primaryCyl.id}/readings?limit=15`);
         setReadings(readingsRes.data);
       } else if (isMockModeEnabled()) {
-        // Fallback to mock cylinder
         const mockCyl = mockCylinderStore.get();
         setCylinder(mockCyl);
         setReadings(mockHistoricalReadings);
@@ -43,7 +45,6 @@ export default function Dashboard() {
         setReadings([]);
       }
 
-      // 3. Get bookings and find active ones
       let active = null;
       if (isMockModeEnabled() && (cylRes.data.length === 0)) {
         const bookings = mockBookingsStore.get();
@@ -56,13 +57,10 @@ export default function Dashboard() {
           active = bookingsRes.data.find((b: any) => 
             ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status)
           );
-        } catch (e) {
-          console.error("Failed to fetch backend bookings", e);
-        }
+        } catch (e) {}
       }
       setActiveBooking(active || null);
       
-      // Generate activities list
       const activityList = [];
       if (cylRes.data.length > 0) {
         const cyl = cylRes.data[0];
@@ -73,8 +71,7 @@ export default function Dashboard() {
           color: 'text-sky-400 bg-sky-500/10'
         });
       } else if (isMockModeEnabled() && cylRes.data.length === 0) {
-        const currentActivities = mockActivitiesStore.get();
-        currentActivities.forEach((act) => {
+        mockActivitiesStore.get().forEach((act) => {
           activityList.push({
             title: act.title,
             time: act.time,
@@ -104,7 +101,6 @@ export default function Dashboard() {
   useEffect(() => {
     fetchDashboardData();
 
-    // Subscribe to mock stores if in mock mode
     let unsubscribeCyl: (() => void) | null = null;
     let unsubscribeBookings: (() => void) | null = null;
     let unsubscribeActivities: (() => void) | null = null;
@@ -112,21 +108,15 @@ export default function Dashboard() {
     if (isMockModeEnabled()) {
       unsubscribeCyl = mockCylinderStore.subscribe(() => {
         apiClient.get('/api/users/cylinders').then(res => {
-          if (res.data.length === 0) {
-            setCylinder(mockCylinderStore.get());
-          }
-        }).catch(() => {
-          setCylinder(mockCylinderStore.get());
-        });
+          if (res.data.length === 0) setCylinder(mockCylinderStore.get());
+        }).catch(() => setCylinder(mockCylinderStore.get()));
       });
 
       unsubscribeBookings = mockBookingsStore.subscribe(() => {
         apiClient.get('/api/users/cylinders').then(res => {
           if (res.data.length === 0) {
             const bookings = mockBookingsStore.get();
-            const active = bookings.find((b: any) => 
-              ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status)
-            );
+            const active = bookings.find((b: any) => ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status));
             setActiveBooking(active || null);
           }
         });
@@ -147,66 +137,12 @@ export default function Dashboard() {
       });
     }
 
-    // Setup WebSocket connection for instant update
-    const rawUser = localStorage.getItem('user');
-    if (!rawUser) return;
-    const user = JSON.parse(rawUser);
-
-    const ws = new WebSocket(`ws://127.0.0.1:8000/api/ws/${user.id}`);
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.event === 'cylinder_update') {
-        setCylinder((prev: any) => {
-          if (!prev || prev.id === 'CYL-DEMO-001') return prev;
-          const burn_rate = prev.burn_rate_ema || 0.05;
-          const remaining_gas = Math.max(0.0, data.data.weight - prev.tare_weight);
-          const estimated_days = round(remaining_gas / (burn_rate * 24.0), 1);
-          
-          return {
-            ...prev,
-            current_weight: data.data.weight,
-            current_percent: data.data.percent,
-            temperature: data.data.temperature,
-            status: data.data.status,
-            is_online: data.data.is_online,
-            last_seen: data.data.last_seen,
-            estimated_days
-          };
-        });
-
-        setReadings(prev => {
-          if (cylinder && cylinder.id !== 'CYL-DEMO-001') {
-            const newReading = {
-              id: Date.now().toString(),
-              cylinder_id: cylinder?.id || '',
-              weight: data.data.weight,
-              percent: data.data.percent,
-              temperature: data.data.temperature,
-              timestamp: data.data.last_seen,
-              is_estimated: false
-            };
-            return [newReading, ...prev.slice(0, 14)];
-          }
-          return prev;
-        });
-      } else if (data.event === 'booking_update') {
-        fetchDashboardData();
-      }
-    };
-
     return () => {
-      ws.close();
       if (unsubscribeCyl) unsubscribeCyl();
       if (unsubscribeBookings) unsubscribeBookings();
       if (unsubscribeActivities) unsubscribeActivities();
     };
   }, []);
-
-  const round = (value: number, precision: number) => {
-    const multiplier = Math.pow(10, precision || 0);
-    return Math.round(value * multiplier) / multiplier;
-  };
 
   if (loading) {
     return (
@@ -220,118 +156,102 @@ export default function Dashboard() {
   if (!cylinder) {
     return (
       <div className="text-center py-20 bg-slate-850 rounded-3xl border border-slate-800 p-8 max-w-lg mx-auto">
-        <AlertTriangle size={48} className="mx-auto text-amber-500 mb-4" />
+        <Info size={48} className="mx-auto text-amber-500 mb-4" />
         <h2 className="text-xl font-bold text-slate-100">No Cylinders Found</h2>
-        <p className="text-slate-400 mt-2">There are no active cylinders associated with your account. Please link your ESP32 device or contact support.</p>
+        <p className="text-slate-400 mt-2">There are no active cylinders associated with your account. Please link your ESP32 device.</p>
       </div>
     );
   }
 
-  // Format Recharts data (reverse list for timeline flow)
+  // Use values from the device status hook if available, otherwise fallback to cylinder state
+  const currentPercent = deviceStatus.percentage > 0 ? deviceStatus.percentage : cylinder.current_percent;
+  const isOnline = deviceStatus.isOnline;
+  const isEstimated = deviceStatus.isEstimated;
+  const lastSeen = deviceStatus.lastUpdated || cylinder.last_seen;
+
   const chartData = [...readings].reverse().map(r => {
     const d = new Date(r.timestamp);
-    const isMock = cylinder?.id === 'CYL-DEMO-001';
     return {
-      time: isMock 
-        ? d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-        : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       percent: Math.round(r.percent)
     };
   });
 
   return (
     <div className="space-y-6">
-      
-      {/* Welcome header */}
       <header className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-black text-slate-100 tracking-tight">Smart Home Dashboard</h2>
-            {cylinder.id === 'CYL-DEMO-001' && (
-              <span 
-                className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-lg px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider uppercase cursor-help animate-pulse"
-                title="This dashboard is currently displaying simulated IoT data. Connect an ESP32 device to use live sensor data."
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
-                DEMO MODE
-              </span>
-            )}
-          </div>
+          <h2 className="text-2xl font-black text-slate-100 tracking-tight">Smart Home Dashboard</h2>
           <p className="text-slate-400 text-xs mt-1">Real-time IoT diagnostics and automatic cylinder replenish controls.</p>
         </div>
         <div className="flex items-center gap-3 bg-slate-800/80 border border-slate-700/50 rounded-2xl px-4 py-2 text-xs">
-          <span className={`h-2 w-2 rounded-full ${cylinder.is_online ? 'bg-green-500 animate-pulse' : 'bg-rose-500'}`} />
+          <span className={`h-2 w-2 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-rose-500'}`} />
           <span className="font-bold text-slate-300">
-            {cylinder.id === 'CYL-DEMO-001' ? 'IoT LINK: SIMULATED' : cylinder.is_online ? 'IoT LINK: ONLINE' : 'IoT LINK: OFFLINE'}
+            {isOnline ? 'IoT LINK: ONLINE' : 'IoT LINK: OFFLINE'}
           </span>
         </div>
       </header>
 
-      {/* Grid of panels */}
+      {/* IoT Architecture Pipeline */}
+      <IoTSystemStatus 
+        isOnline={isOnline} 
+        isEstimated={isEstimated} 
+        lastSeen={lastSeen} 
+      />
+
+      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left Column: 3D Visualization */}
-        <div className="lg:col-span-1">
+        {/* Left Column: Visualizations */}
+        <div className="lg:col-span-1 space-y-6">
+
           <GasCylinderVisualization 
-            gasLevel={cylinder.current_percent}
+            gasLevel={currentPercent}
             weight={cylinder.current_weight}
             status={cylinder.status}
-            isConnected={cylinder.is_online}
+            isConnected={isOnline}
           />
         </div>
 
-        {/* Center/Right Column: Detailed Statuses */}
+        {/* Right Column: Status and Charts */}
         <div className="lg:col-span-2 space-y-6">
-          
-          {/* Main Hero Diagnostics Info */}
-          <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 grid grid-cols-1 md:grid-cols-3 gap-6 shadow-md relative overflow-hidden">
+          {/* Notification Banner */}
+          <LowGasNotification 
+            cylinderId={cylinder.id} 
+            percentage={currentPercent} 
+            isEstimated={isEstimated} 
+          />
+
+          {/* Hero Diagnostics Info */}
+          <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 grid grid-cols-1 md:grid-cols-2 gap-6 shadow-md relative overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 bg-sky-500/5 rounded-full blur-xl pointer-events-none" />
             
-            {/* Box 1: Estimated Days */}
             <div className="flex items-start gap-4">
               <div className="p-3 bg-sky-500/10 rounded-2xl text-sky-400 shrink-0">
                 <Battery size={22} className="animate-pulse" />
               </div>
               <div>
-                <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-semibold">Remaining Gas</span>
+                <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-semibold">Remaining Gas Weight</span>
                 <span className="text-xl font-bold text-slate-100 block mt-1">
-                  {cylinder.estimated_days ? `${cylinder.estimated_days} Days` : 'Estimating...'}
+                  {cylinder.current_weight ? `${(cylinder.current_weight - cylinder.tare_weight).toFixed(2)} kg` : '...'}
                 </span>
-                <p className="text-[10px] text-slate-500 mt-1">Based on hourly usage</p>
+                <p className="text-[10px] text-slate-500 mt-1">Total weight: {cylinder.current_weight?.toFixed(2)} kg</p>
               </div>
             </div>
 
-            {/* Box 2: Temperature */}
             <div className="flex items-start gap-4 border-t md:border-t-0 md:border-l border-slate-800 pt-4 md:pt-0 md:pl-6">
               <div className="p-3 bg-rose-500/10 rounded-2xl text-rose-400 shrink-0">
-                <Thermometer size={22} />
+                <Info size={22} />
               </div>
               <div>
-                <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-semibold">Ambient Temp</span>
-                <span className="text-xl font-bold text-slate-100 block mt-1">{cylinder.temperature.toFixed(1)}°C</span>
-                <p className="text-[10px] text-slate-500 mt-1">LPG safety threshold OK</p>
-              </div>
-            </div>
-
-            {/* Box 3: Last Sync */}
-            <div className="flex items-start gap-4 border-t md:border-t-0 md:border-l border-slate-800 pt-4 md:pt-0 md:pl-6">
-              <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-400 shrink-0">
-                <Zap size={22} />
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-semibold">Last Synchronized</span>
-                <span className="text-xs font-bold text-slate-200 block mt-2">
-                  {cylinder.id === 'CYL-DEMO-001' ? 'Just now' : (cylinder.last_seen ? new Date(cylinder.last_seen).toLocaleTimeString() : 'Never')}
-                </span>
-                <span className="text-[9px] text-slate-500 mt-1 block">
-                  {cylinder.id === 'CYL-DEMO-001' ? 'Live Simulation Active' : 'Online via Wi-Fi'}
-                </span>
+                <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-semibold">Cylinder Info</span>
+                <span className="text-sm font-bold text-slate-100 block mt-1">{cylinder.name} ({cylinder.id})</span>
+                <p className="text-[10px] text-slate-500 mt-1">Empty Weight: {cylinder.tare_weight} kg</p>
+                <p className="text-[10px] text-slate-500">Max Capacity: {(cylinder.full_weight - cylinder.tare_weight).toFixed(2)} kg</p>
               </div>
             </div>
           </div>
 
-          {/* Active Booking status card */}
-          {activeBooking ? (
+          {activeBooking && (
             <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden shadow-md">
               <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-amber-500" />
               <div>
@@ -343,64 +263,20 @@ export default function Dashboard() {
                   Booking ID <code className="text-sky-400 font-mono text-[11px]">{activeBooking.booking_id}</code> is currently: <span className="font-bold text-slate-200">{activeBooking.status}</span>.
                 </p>
               </div>
-              <Link 
-                to={`/bookings`} 
-                className="px-4 py-2 bg-slate-800 border border-slate-700/50 hover:bg-slate-7.5 text-xs text-sky-400 font-bold rounded-xl flex items-center gap-1 cursor-pointer transition-all"
-              >
-                Track Booking
-                <ArrowUpRight size={14} />
+              <Link to="/bookings" className="px-4 py-2 bg-slate-800 border border-slate-700/50 hover:bg-slate-7.5 text-xs text-sky-400 font-bold rounded-xl flex items-center gap-1 cursor-pointer transition-all">
+                Track Booking <ArrowUpRight size={14} />
               </Link>
             </div>
-          ) : cylinder.current_percent <= 20.0 ? (
-            <div className="bg-gradient-to-r from-red-950/40 to-slate-850 border border-red-900/30 rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden shadow-lg animate-pulse">
-              <div>
-                <div className="flex items-center gap-2 text-rose-400">
-                  <AlertTriangle size={18} />
-                  <span className="font-bold text-sm">Action Required: Cylinder Critical</span>
-                </div>
-                <p className="text-xs text-slate-300 mt-1.5">
-                  Capacity is currently at {cylinder.current_percent.toFixed(1)}%. Order a replacement before depleting resources.
-                </p>
-              </div>
-              <Link 
-                to="/book" 
-                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-xs text-white font-bold rounded-xl flex items-center gap-1 cursor-pointer shadow-lg shadow-rose-600/20"
-              >
-                Book Cylinder Now
-                <CalendarPlus size={14} />
-              </Link>
-            </div>
-          ) : cylinder.current_percent <= 40.0 ? (
-            <div className="bg-amber-500/5 border border-amber-500/20 rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden shadow-md">
-              <div>
-                <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
-                  <AlertTriangle size={18} />
-                  <span>⚠ Gas Level Low</span>
-                </div>
-                <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
-                  Your cylinder currently has {cylinder.current_percent.toFixed(1)}% gas remaining. Based on your recent usage, approximately {cylinder.estimated_days} days may remain. Consider booking a new cylinder.
-                </p>
-              </div>
-              <Link 
-                to="/book" 
-                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-xs text-slate-900 font-bold rounded-xl flex items-center gap-1 cursor-pointer transition-all shadow-md shrink-0"
-              >
-                Book New Cylinder
-                <CalendarPlus size={14} />
-              </Link>
-            </div>
-          ) : null}
+          )}
 
-          {/* Recharts history capacity line chart */}
           <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6">
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h3 className="font-bold text-slate-100 text-base">Capacity Logs</h3>
-                <p className="text-[10px] text-slate-500">Gas level variations inside the load cell over time</p>
+                <h3 className="font-bold text-slate-100 text-base">Gas Consumption Logs</h3>
+                <p className="text-[10px] text-slate-500">Load cell variations over time</p>
               </div>
               <Link to="/usage" className="text-sky-400 hover:text-sky-300 font-semibold text-xs flex items-center gap-1">
-                View History
-                <History size={14} />
+                View History <History size={14} />
               </Link>
             </div>
 
@@ -409,126 +285,40 @@ export default function Dashboard() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
-                    <XAxis 
-                      dataKey="time" 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{fill: '#64748b', fontSize: 10}} 
-                      dy={10} 
-                    />
-                    <YAxis 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{fill: '#64748b', fontSize: 10}} 
-                      dx={-10} 
-                      domain={[0, 100]} 
-                    />
-                    <Tooltip 
-                      contentStyle={{backgroundColor: '#1e293b', borderRadius: '12px', border: '1px solid #334155', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.3)', color: '#fff'}}
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="percent" 
-                      stroke="#0ea5e9" 
-                      strokeWidth={3} 
-                      dot={{r: 4, fill: '#0284c7', strokeWidth: 1.5, stroke: '#fff'}} 
-                      activeDot={{r: 6, strokeWidth: 0}}
-                    />
+                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} dx={-10} domain={[0, 100]} />
+                    <Tooltip contentStyle={{backgroundColor: '#1e293b', borderRadius: '12px', border: '1px solid #334155', color: '#fff'}} />
+                    <Line type="monotone" dataKey="percent" stroke="#0ea5e9" strokeWidth={3} dot={{r: 4, fill: '#0284c7', strokeWidth: 1.5, stroke: '#fff'}} />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2">
                   <Info size={28} className="text-slate-600" />
-                  <span className="text-xs">No metrics saved yet. Ingest ESP32 feeds.</span>
+                  <span className="text-xs">No metrics saved yet.</span>
                 </div>
               )}
             </div>
           </div>
-
         </div>
-
       </div>
 
-      {/* Footer section: Quick Actions & Activities */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        {/* Box 1: Quick Actions */}
-        <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 md:col-span-1">
-          <h3 className="font-bold text-slate-100 text-sm mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-1 gap-2.5">
-            <Link 
-              to="/book" 
-              className="w-full flex items-center justify-between p-3.5 bg-slate-800/60 border border-slate-700/40 rounded-2xl hover:bg-slate-7.5 hover:border-slate-650 transition-all font-medium text-xs cursor-pointer text-slate-200"
-            >
-              <span className="flex items-center gap-2">
-                <CalendarPlus className="text-sky-400" size={16} />
-                Book New Cylinder
-              </span>
-              <ArrowUpRight size={14} className="text-slate-500" />
-            </Link>
-            <Link 
-              to="/usage" 
-              className="w-full flex items-center justify-between p-3.5 bg-slate-800/60 border border-slate-700/40 rounded-2xl hover:bg-slate-7.5 hover:border-slate-650 transition-all font-medium text-xs cursor-pointer text-slate-200"
-            >
-              <span className="flex items-center gap-2">
-                <History className="text-sky-400" size={16} />
-                View Usage History
-              </span>
-              <ArrowUpRight size={14} className="text-slate-500" />
-            </Link>
-            <Link 
-              to="/bookings" 
-              className="w-full flex items-center justify-between p-3.5 bg-slate-800/60 border border-slate-700/40 rounded-2xl hover:bg-slate-7.5 hover:border-slate-650 transition-all font-medium text-xs cursor-pointer text-slate-200"
-            >
-              <span className="flex items-center gap-2">
-                <Package className="text-sky-400" size={16} />
-                View My Bookings
-              </span>
-              <ArrowUpRight size={14} className="text-slate-500" />
-            </Link>
-            <Link 
-              to="/settings" 
-              className="w-full flex items-center justify-between p-3.5 bg-slate-800/60 border border-slate-700/40 rounded-2xl hover:bg-slate-7.5 hover:border-slate-650 transition-all font-medium text-xs cursor-pointer text-slate-200"
-            >
-              <span className="flex items-center gap-2">
-                <Settings className="text-sky-400" size={16} />
-                Manage Cylinder
-              </span>
-              <ArrowUpRight size={14} className="text-slate-500" />
-            </Link>
-          </div>
+      {/* Footer Activities */}
+      <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6">
+        <h3 className="font-bold text-slate-100 text-sm mb-4">Recent Activity</h3>
+        <div className="space-y-4">
+          {recentActivities.map((act, idx) => {
+            const Icon = act.icon;
+            return (
+              <div key={idx} className="flex justify-between items-start gap-4 text-xs">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-xl shrink-0 ${act.color}`}><Icon size={14} /></div>
+                  <span className="font-semibold text-slate-200 block">{act.title}</span>
+                </div>
+                <span className="text-[10px] text-slate-600 font-bold shrink-0">{act.time}</span>
+              </div>
+            );
+          })}
         </div>
-
-        {/* Box 2: Recent Activity Timeline */}
-        <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 md:col-span-2">
-          <h3 className="font-bold text-slate-100 text-sm mb-4">Recent Activity</h3>
-          <div className="space-y-4">
-            {recentActivities.length === 0 ? (
-              <p className="text-slate-500 text-xs">No updates to report.</p>
-            ) : (
-              recentActivities.map((act, idx) => {
-                const Icon = act.icon;
-                return (
-                  <div key={idx} className="flex justify-between items-start gap-4 text-xs">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-xl shrink-0 ${act.color}`}>
-                        <Icon size={14} />
-                      </div>
-                      <div>
-                        <span className="font-semibold text-slate-200 block">{act.title}</span>
-                        {cylinder.id === 'CYL-DEMO-001' && (
-                          <span className="text-[9px] text-slate-500 block mt-0.5">Simulation Data</span>
-                        )}
-                      </div>
-                    </div>
-                    <span className="text-[10px] text-slate-600 font-bold shrink-0">{act.time}</span>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
       </div>
 
     </div>

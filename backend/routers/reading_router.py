@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from bson import ObjectId
 from database import get_database
+from config import settings
 import schemas
 import websocket_manager
 import auth
@@ -16,26 +17,37 @@ def calculate_percent(weight: float, tare: float, full: float) -> float:
     percent = ((weight - tare) / (full - tare)) * 100.0
     return max(0.0, min(100.0, percent))
 
-@router.post("/readings", response_model=schemas.ReadingResponse)
+@router.post("/readings", response_model=schemas.ReadingResponse, dependencies=[Depends(auth.verify_iot_api_key)])
 async def create_reading(
     reading: schemas.ReadingCreate, 
-    x_api_key: str = Header(..., alias="X-API-Key"),
     db = Depends(get_database)
 ):
-    # Verify device by API key
-    cylinder = await db.cylinders.find_one({"api_key": x_api_key})
-    if not cylinder:
+    if not hasattr(reading, 'device_id') or not reading.device_id:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid Device API Key"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="device_id is required in JSON body"
         )
         
+    try:
+        cylinder = await db.cylinders.find_one({"_id": ObjectId(reading.device_id)})
+    except:
+        cylinder = await db.cylinders.find_one({"api_key": reading.device_id})
+        
+    if not cylinder:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device (Cylinder) not found"
+        )
+            
     cylinder_id = str(cylinder["_id"])
     user_id = str(cylinder["owner_id"])
     
     tare = cylinder.get("tare_weight", 15.0)
     full = cylinder.get("full_weight", 29.2)
     percent = calculate_percent(reading.weight, tare, full)
+    
+    # Calculate Gas Weight
+    gas_weight = max(0.0, reading.weight - tare)
     
     timestamp = reading.timestamp or datetime.now(timezone.utc)
     if timestamp.tzinfo is None:
@@ -51,7 +63,6 @@ async def create_reading(
     }
     
     # Calculate EMA burn rate
-    # Fetch last non-estimated reading
     prev_reading = await db.sensor_readings.find_one(
         {"cylinder_id": cylinder_id, "is_estimated": False},
         sort=[("timestamp", -1)]
@@ -65,25 +76,19 @@ async def create_reading(
             
         time_diff_hours = (timestamp - prev_time).total_seconds() / 3600.0
         
-        # Only update if some time has passed (e.g., > 1 minute)
         if time_diff_hours > 0.016:
             weight_drop = prev_reading["weight"] - reading.weight
-            # Filter out refills/swaps (weight goes up) or anomalous huge drops
             if 0 < weight_drop < 4.0:
                 observed_rate = weight_drop / time_diff_hours
                 alpha = 0.2
                 new_ema = alpha * observed_rate + (1 - alpha) * new_ema
                 
-    # Update cylinder status
-    status_label = "Good"
-    if percent < 10.0:
-        status_label = "Critical"
-    elif percent < 20.0:
-        status_label = "Very Low"
-    elif percent < 40.0:
-        status_label = "Low"
-    elif percent < 70.0:
-        status_label = "Normal"
+    # Update cylinder status using exact weight thresholds from env
+    status_label = "NORMAL"
+    if gas_weight < settings.CRITICAL_WEIGHT_THRESHOLD:
+        status_label = "CRITICAL"
+    elif gas_weight <= settings.LOW_WEIGHT_THRESHOLD:
+        status_label = "LOW"
         
     await db.cylinders.update_one(
         {"_id": ObjectId(cylinder_id)},
@@ -102,18 +107,16 @@ async def create_reading(
     res = await db.sensor_readings.insert_one(db_reading)
     db_reading["id"] = str(res.inserted_id)
     
-    # Check Alerts
-    # Auto Low-gas notification throttling (only 1 per 12 hours)
-    if percent <= 20.0:
-        alert_type = "critical_gas" if percent <= 9.0 else "low_gas"
-        title = "Critical Gas Level Alert!" if percent <= 9.0 else "Low Gas Alert"
+    # Check Alerts based on weight thresholds
+    if status_label in ["LOW", "CRITICAL"]:
+        alert_type = "critical_gas" if status_label == "CRITICAL" else "low_gas"
+        title = "Critical Gas Level Alert!" if status_label == "CRITICAL" else "Low Gas Alert"
         message = (
-            f"Your cylinder is almost empty ({percent:.1f}% remaining). Book a new cylinder immediately."
-            if percent <= 9.0 else
-            f"Your cylinder has reached {percent:.1f}%. We recommend booking a new cylinder."
+            f"Your cylinder is almost empty ({gas_weight:.1f}kg remaining). Book a new cylinder immediately."
+            if status_label == "CRITICAL" else
+            f"Your cylinder has reached {gas_weight:.1f}kg. We recommend booking a new cylinder."
         )
         
-        # Check if we created one recently
         time_limit = datetime.now(timezone.utc) - timedelta(hours=12)
         recent_alert = await db.notifications.find_one({
             "user_id": user_id,
@@ -122,7 +125,6 @@ async def create_reading(
         })
         
         if not recent_alert:
-            # Create notification
             new_alert = {
                 "user_id": user_id,
                 "type": alert_type,
@@ -133,7 +135,6 @@ async def create_reading(
             }
             await db.notifications.insert_one(new_alert)
             
-            # Broadcast notification
             await websocket_manager.manager.broadcast_to_user(user_id, {
                 "event": "notification",
                 "data": {
@@ -144,14 +145,13 @@ async def create_reading(
                 }
             })
             
-            # Auto-booking if level drops below 15% and no active bookings exist
-            if percent <= 15.0:
+            # Auto-booking logic for critical state
+            if status_label == "CRITICAL":
                 active_booking = await db.bookings.find_one({
                     "user_id": user_id,
                     "status": {"$in": ["Pending", "Confirmed", "Processing", "Out for Delivery"]}
                 })
                 if not active_booking:
-                    # Trigger auto-booking
                     booking_id = f"GAS-AUTO-{secrets.token_hex(4).upper()}"
                     user = await db.users.find_one({"_id": ObjectId(user_id)})
                     new_booking = {
@@ -170,12 +170,11 @@ async def create_reading(
                     }
                     await db.bookings.insert_one(new_booking)
                     
-                    # Create notification
                     auto_booking_alert = {
                         "user_id": user_id,
                         "type": "booking_status",
                         "title": "Refill Auto-Booked",
-                        "message": f"Gas level at {percent:.1f}%. Auto-booking triggered: ID {booking_id}.",
+                        "message": f"Gas weight critical at {gas_weight:.1f}kg. Auto-booking triggered: ID {booking_id}.",
                         "read": False,
                         "created_at": datetime.now(timezone.utc)
                     }
@@ -185,7 +184,7 @@ async def create_reading(
                         "data": {
                             "type": "booking_status",
                             "title": "Refill Auto-Booked",
-                            "message": f"Gas level at {percent:.1f}%. Auto-booking triggered: ID {booking_id}."
+                            "message": f"Gas weight critical at {gas_weight:.1f}kg. Auto-booking triggered: ID {booking_id}."
                         }
                     })
                     
@@ -204,6 +203,40 @@ async def create_reading(
     
     return schemas.ReadingResponse(**db_reading)
 
+@router.get("/latest/{device_id}")
+async def get_latest_reading(device_id: str, db = Depends(get_database)):
+    # Support for the /api/iot/readings/latest/{device_id} requirement
+    try:
+        cylinder = await db.cylinders.find_one({"_id": ObjectId(device_id)})
+    except:
+        cylinder = await db.cylinders.find_one({"api_key": device_id})
+        
+    if not cylinder:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found"
+        )
+        
+    reading = await db.sensor_readings.find_one(
+        {"cylinder_id": str(cylinder["_id"])},
+        sort=[("timestamp", -1)]
+    )
+    
+    if not reading:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No readings found for this device"
+        )
+        
+    return {
+        "success": True,
+        "device_id": device_id,
+        "weight": reading["weight"],
+        "unit": "kg",
+        "status": cylinder.get("status", "NORMAL"),
+        "timestamp": reading["timestamp"].isoformat()
+    }
+
 @router.get("/{cylinder_id}/readings", response_model=List[schemas.ReadingResponse])
 async def get_cylinder_readings(
     cylinder_id: str,
@@ -212,6 +245,9 @@ async def get_cylinder_readings(
     current_user: dict = Depends(auth.get_current_user),
     db = Depends(get_database)
 ):
+    # Support for the API limit requirement
+    limit = min(limit, 500) # Do not allow unlimited database queries
+    
     query = {"cylinder_id": cylinder_id}
     if days:
         since = datetime.now(timezone.utc) - timedelta(days=days)
@@ -223,4 +259,3 @@ async def get_cylinder_readings(
         doc["id"] = str(doc["_id"])
         readings.append(schemas.ReadingResponse(**doc))
     return readings
-

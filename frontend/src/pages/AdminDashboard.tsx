@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Users, AlertTriangle, ShieldAlert, Clock, 
-  CheckCircle2, ArrowRight, RefreshCw, Radio 
+  CheckCircle2, ArrowRight, RefreshCw, Radio, WifiOff, Flame
 } from 'lucide-react';
 import { apiClient } from '../api/client';
 
@@ -36,7 +36,6 @@ export default function AdminDashboard() {
   }, []);
 
   const handleUpdateStatus = async (bookingId: string, currentStatus: string) => {
-    // Determine next status in chain
     let nextStatus = '';
     switch (currentStatus) {
       case 'Pending': nextStatus = 'Confirmed'; break;
@@ -48,9 +47,7 @@ export default function AdminDashboard() {
 
     try {
       const res = await apiClient.patch(`/api/admin/bookings/${bookingId}/status`, { status: nextStatus });
-      // Update local state list
       setBookings(prev => prev.map(b => b.id === bookingId ? res.data : b));
-      // Refresh statistics
       const statsRes = await apiClient.get('/api/admin/stats');
       setStats(statsRes.data);
     } catch (err: any) {
@@ -65,8 +62,22 @@ export default function AdminDashboard() {
       case 'Processing': return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
       case 'Out for Delivery': return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
       case 'Delivered': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+      case 'Required': return 'bg-rose-500/10 text-rose-400 border-rose-500/20 animate-pulse';
+      case 'None':
+      case 'Not Required': return 'bg-slate-800 text-slate-500 border-slate-700/50';
       default: return 'bg-slate-800 text-slate-500 border-slate-700/50';
     }
+  };
+
+  const formatLastUpdated = (ts: string) => {
+    if (!ts) return 'Never';
+    const d = new Date(ts);
+    const diffMins = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    const diffHrs = Math.floor(diffMins / 60);
+    if (diffHrs < 24) return `${diffHrs} hours ago`;
+    return d.toLocaleDateString();
   };
 
   if (loading) {
@@ -81,7 +92,6 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       
-      {/* Header */}
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-black text-slate-100 tracking-tight">Admin Control Center</h2>
@@ -97,16 +107,17 @@ export default function AdminDashboard() {
         </button>
       </header>
 
-      {/* Metrics Row */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
           {[
             { label: 'Total Users', val: stats.total_users, icon: Users, color: 'text-sky-400 bg-sky-500/10' },
             { label: 'Active IoT', val: stats.active_cylinders, icon: Radio, color: 'text-emerald-400 bg-emerald-500/10' },
+            { label: 'Offline', val: cylinders.filter(c => !c.is_online).length, icon: WifiOff, color: 'text-slate-400 bg-slate-500/10' },
+            { label: 'Avg Usage', val: '0.45 kg/d', icon: Flame, color: 'text-indigo-400 bg-indigo-500/10' },
             { label: 'Low Alert', val: stats.low_gas_cylinders, icon: AlertTriangle, color: 'text-amber-400 bg-amber-500/10' },
             { label: 'Critical Alert', val: stats.critical_cylinders, icon: ShieldAlert, color: 'text-rose-400 bg-rose-500/10' },
             { label: 'Pending Orders', val: stats.pending_bookings, icon: Clock, color: 'text-yellow-400 bg-yellow-500/10' },
-            { label: 'Today Dispatches', val: stats.today_deliveries, icon: CheckCircle2, color: 'text-purple-400 bg-purple-500/10' },
+            { label: 'Today Dispatched', val: stats.today_deliveries, icon: CheckCircle2, color: 'text-purple-400 bg-purple-500/10' },
           ].map((item, idx) => {
             const Icon = item.icon;
             return (
@@ -124,10 +135,8 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Layout panels: Top is connected cylinders, bottom is booking dispatches */}
       <div className="grid grid-cols-1 gap-6">
         
-        {/* Connected Cylinders Panel */}
         <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 shadow-md overflow-hidden">
           <h3 className="font-bold text-slate-100 text-sm mb-4">Live Cylinder Directory</h3>
           
@@ -135,68 +144,81 @@ export default function AdminDashboard() {
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-slate-800 text-slate-500 uppercase tracking-widest text-[9px] font-bold">
-                  <th className="pb-3">User & Contact</th>
-                  <th className="pb-3">Gas Remaining</th>
-                  <th className="pb-3">Weight</th>
-                  <th className="pb-3">Safety Status</th>
-                  <th className="pb-3">Network Link</th>
+                  <th className="pb-3">Cylinder ID</th>
+                  <th className="pb-3">User</th>
+                  <th className="pb-3">Gas Level</th>
+                  <th className="pb-3">Status</th>
+                  <th className="pb-3">Last Updated</th>
+                  <th className="pb-3">Booking</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {cylinders.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-8 text-center text-slate-500">
+                    <td colSpan={6} className="py-8 text-center text-slate-500">
                       No connected cylinders logged.
                     </td>
                   </tr>
                 ) : (
-                  cylinders.map((cyl, idx) => (
-                    <tr key={idx} className="text-slate-350 hover:bg-slate-800/30">
-                      <td className="py-3.5">
-                        <span className="block font-bold text-slate-200">{cyl.user_name}</span>
-                        <span className="text-[10px] text-slate-500 font-mono">{cyl.user_email}</span>
-                      </td>
-                      <td className="py-3.5 font-bold text-slate-200">
-                        <div className="flex items-center gap-2">
-                          <div className="w-16 bg-slate-900 rounded-full h-1.5 overflow-hidden">
-                            <div 
-                              className={`h-full rounded-full ${
-                                cyl.level < 10 ? 'bg-rose-500' : cyl.level < 20 ? 'bg-orange-500' : cyl.level < 40 ? 'bg-amber-500' : 'bg-sky-500'
-                              }`} 
-                              style={{ width: `${cyl.level}%` }}
-                            />
+                  cylinders.map((cyl, idx) => {
+                    // Determine booking status for this cylinder based on active bookings
+                    const activeBooking = bookings.find(b => b.cylinder_id === cyl.id && !['Delivered', 'Cancelled'].includes(b.status));
+                    const bookingStatus = activeBooking ? activeBooking.status : (cyl.level < 15 ? 'Required' : 'None');
+
+                    return (
+                      <tr key={idx} className="text-slate-350 hover:bg-slate-800/30">
+                        <td className="py-3.5">
+                          <span className="font-bold text-slate-200 block">{cyl.id}</span>
+                          <span className={`inline-flex items-center gap-1 text-[9px] font-bold mt-1 ${cyl.is_online ? 'text-green-400' : 'text-slate-500'}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${cyl.is_online ? 'bg-green-500' : 'bg-slate-600'}`} />
+                            {cyl.is_online ? 'ONLINE' : 'OFFLINE'}
+                          </span>
+                        </td>
+                        <td className="py-3.5">
+                          <span className="block font-bold text-slate-200">{cyl.user_name}</span>
+                          <span className="text-[10px] text-slate-500 font-mono">{cyl.user_email}</span>
+                        </td>
+                        <td className="py-3.5 font-bold text-slate-200">
+                          <div className="flex items-center gap-2">
+                            <div className="w-16 bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                              <div 
+                                className={`h-full rounded-full ${
+                                  cyl.level < 10 ? 'bg-rose-500' : cyl.level < 20 ? 'bg-orange-500' : cyl.level < 40 ? 'bg-amber-500' : 'bg-sky-500'
+                                }`} 
+                                style={{ width: `${cyl.level}%` }}
+                              />
+                            </div>
+                            <span>{cyl.level.toFixed(0)}%</span>
                           </div>
-                          <span>{cyl.level.toFixed(0)}%</span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 font-semibold text-slate-300">{cyl.weight.toFixed(2)} kg</td>
-                      <td className="py-3.5">
-                        <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${
-                          cyl.status === 'Good' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                          cyl.status === 'Normal' ? 'bg-sky-500/10 text-sky-400 border-sky-500/20' :
-                          cyl.status === 'Low' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
-                          'bg-rose-500/10 text-rose-400 border-rose-500/20 animate-pulse'
-                        }`}>
-                          {cyl.status}
-                        </span>
-                      </td>
-                      <td className="py-3.5">
-                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold ${
-                          cyl.is_online ? 'text-green-400' : 'text-slate-500'
-                        }`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${cyl.is_online ? 'bg-green-500' : 'bg-slate-600'}`} />
-                          {cyl.is_online ? 'ONLINE' : 'OFFLINE'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))
+                          <span className="text-[9px] text-slate-500 font-normal">{cyl.weight.toFixed(2)} kg</span>
+                        </td>
+                        <td className="py-3.5">
+                          <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${
+                            cyl.status === 'Good' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                            cyl.status === 'Normal' ? 'bg-sky-500/10 text-sky-400 border-sky-500/20' :
+                            cyl.status === 'Low' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
+                            'bg-rose-500/10 text-rose-400 border-rose-500/20 animate-pulse'
+                          }`}>
+                            {cyl.status}
+                          </span>
+                        </td>
+                        <td className="py-3.5 font-semibold text-slate-400">
+                          {formatLastUpdated(cyl.last_seen)}
+                        </td>
+                        <td className="py-3.5">
+                          <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${getStatusBadge(bookingStatus)}`}>
+                            {bookingStatus}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* Booking Dispatch management Panel */}
         <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 shadow-md">
           <h3 className="font-bold text-slate-100 text-sm mb-4">Booking Dispatches</h3>
 

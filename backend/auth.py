@@ -14,6 +14,29 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=Fals
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
+from fastapi import Header
+
+def verify_iot_api_key(x_api_key: str = Header(default=None, alias="X-API-Key")):
+    if not settings.IOT_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="IoT API authentication is not configured"
+        )
+        
+    if not x_api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing X-API-Key header"
+        )
+        
+    if x_api_key != settings.IOT_API_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid X-API-Key"
+        )
+        
+    return True
+
 def get_password_hash(password):
     return pwd_context.hash(password)
 

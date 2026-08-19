@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 import logging
 
 # Database & settings
-from database import get_database
+from database import get_database, ping_database, close_database_connection
 from config import settings
 
 # Routers
@@ -24,19 +24,34 @@ logger = logging.getLogger("GasTrack")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Test MongoDB Connection
+    logger.info("Attempting to connect to MongoDB Atlas...")
+    if await ping_database():
+        print("MongoDB Atlas connected successfully")
+    else:
+        print("MongoDB connection failed: Database service is temporarily unavailable.")
+        
     # Initialize MongoDB Indexes on Startup
     logger.info("Initializing MongoDB Indexes...")
     db = get_database()
-    await db.users.create_index("email", unique=True)
-    await db.users.create_index("mobile", unique=True)
-    await db.cylinders.create_index("owner_id")
-    await db.cylinders.create_index("api_key", unique=True)
-    await db.sensor_readings.create_index([("cylinder_id", 1), ("timestamp", -1)])
-    await db.bookings.create_index("user_id")
-    await db.bookings.create_index("booking_id", unique=True)
-    await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
-    logger.info("MongoDB Indexes initialized successfully.")
+    try:
+        await db.users.create_index("email", unique=True)
+        await db.users.create_index("mobile", unique=True)
+        await db.cylinders.create_index("owner_id")
+        await db.cylinders.create_index("api_key", unique=True)
+        # Required by user prompt
+        await db.devices.create_index("device_id", unique=True)
+        await db.sensor_readings.create_index([("cylinder_id", 1), ("timestamp", -1)])
+        await db.bookings.create_index("user_id")
+        await db.bookings.create_index("booking_id", unique=True)
+        await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
+        logger.info("MongoDB Indexes initialized successfully.")
+    except Exception as e:
+        logger.error("Failed to create some indexes. DB might be offline.")
+
     yield
+
+    close_database_connection()
 
 app = FastAPI(
     title="GasTrack API",
@@ -96,6 +111,37 @@ def read_root():
         "version": "2.0.0"
     }
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok", "db": "connected"}
+@app.get("/api/health")
+async def health_check():
+    is_connected = await ping_database()
+    return {
+        "success": True if is_connected else False,
+        "server": "online",
+        "database": "connected" if is_connected else "disconnected"
+    }
+
+from pydantic import BaseModel
+
+class DeviceRegistration(BaseModel):
+    device_id: str
+    device_name: str
+    location: str
+
+@app.post("/api/iot/devices")
+async def register_iot_device(device: DeviceRegistration):
+    db = get_database()
+    existing = await db.devices.find_one({"device_id": device.device_id})
+    if existing:
+        return {"success": False, "message": "Device ID already exists"}
+        
+    new_device = {
+        "device_id": device.device_id,
+        "device_name": device.device_name,
+        "location": device.location,
+        "status": "online",
+        "created_at": __import__('datetime').datetime.now(__import__('datetime').timezone.utc),
+        "last_seen": __import__('datetime').datetime.now(__import__('datetime').timezone.utc)
+    }
+    
+    await db.devices.insert_one(new_device)
+    return {"success": True, "message": "Device registered successfully", "device_id": device.device_id}

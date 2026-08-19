@@ -57,6 +57,7 @@ class CylinderResponse(CylinderBase):
 
 # Sensor Reading Schemas
 class ReadingBase(BaseModel):
+    device_id: str
     weight: float
     temperature: float = 28.0
 

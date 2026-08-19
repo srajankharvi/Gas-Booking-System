@@ -5,15 +5,16 @@
 #include <Preferences.h>
 #include <ArduinoJson.h>
 
-// Pin Configuration (Updated for boards with D-labels)
-const int LOADCELL_DOUT_PIN = D2;
-const int LOADCELL_SCK_PIN = D4;
+// Pin Configuration
+const int LOADCELL_DOUT_PIN = 2; // GPIO2
+const int LOADCELL_SCK_PIN = 4;  // GPIO4
 
 // Config
 const char* ssid = "IOT-Project";
-const char* password = "admin@main";
-const char* api_url = "http://192.168.1.100:8000/readings/";
-const char* api_key = "YOUR_DEVICE_API_KEY";
+const char* password = "[PASSWORD]";
+const char* api_url = "http://[IP_ADDRESS]/api/iot/cylinder/readings";
+const char* api_key = "sk_adminuser1234567890";
+const char* device_id = "68ca0a1b21437e82894bd258";
 
 // Sleep config
 const uint64_t SLEEP_SECONDS = 900; // 15 minutes
@@ -41,6 +42,7 @@ void sendReading(float weight) {
     http.addHeader("X-API-Key", api_key);
     
     StaticJsonDocument<200> doc;
+    doc["device_id"] = device_id;
     doc["weight"] = weight;
     // Real implementation would attach RTC timestamp if available
     
@@ -48,8 +50,13 @@ void sendReading(float weight) {
     serializeJson(doc, requestBody);
     
     int httpResponseCode = http.POST(requestBody);
+    String response = http.getString();
+    
     Serial.print("HTTP Response code: ");
     Serial.println(httpResponseCode);
+    
+    Serial.print("Server response: ");
+    Serial.println(response);
     http.end();
   } else {
     Serial.println("WiFi not connected. Buffering locally (mock).");
