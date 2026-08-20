@@ -10,9 +10,9 @@ const int LOADCELL_DOUT_PIN = 2; // GPIO2
 const int LOADCELL_SCK_PIN = 4;  // GPIO4
 
 // Config
-const char* ssid = "IOT-Project";
-const char* password = "[PASSWORD]";
-const char* API_URL = "https://YOUR-BACKEND-DOMAIN/api/iot/cylinder/readings";
+const char* ssid = "S A J U";
+const char* password = "********";
+const char* API_URL = "https://gastrack-backend.onrender.com/api/iot/cylinder/readings";
 const char* DEVICE_API_KEY = "sec_iot_7890abcdef123456";
 const char* device_id = "GAS001";
 
