@@ -136,7 +136,11 @@ export default function Dashboard() {
   
   const formatTimeAgo = (dateStr: string) => {
     if (!dateStr) return 'Unknown';
-    const seconds = Math.floor((new Date().getTime() - new Date(dateStr).getTime()) / 1000);
+    let cleanDateStr = dateStr;
+    if (!cleanDateStr.endsWith('Z') && !cleanDateStr.includes('+')) {
+      cleanDateStr += 'Z';
+    }
+    const seconds = Math.floor((new Date().getTime() - new Date(cleanDateStr).getTime()) / 1000);
     if (seconds < 60) return `${seconds} seconds ago`;
     if (seconds < 3600) return `${Math.floor(seconds / 60)} mins ago`;
     return `${Math.floor(seconds / 3600)} hours ago`;

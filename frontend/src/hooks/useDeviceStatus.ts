@@ -15,7 +15,11 @@ const ONLINE_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
 
 function checkIsOnline(timestampStr: string | null | undefined): boolean {
   if (!timestampStr) return false;
-  const timeDiff = Date.now() - new Date(timestampStr).getTime();
+  let cleanTimestamp = timestampStr;
+  if (!cleanTimestamp.endsWith('Z') && !cleanTimestamp.includes('+')) {
+    cleanTimestamp += 'Z';
+  }
+  const timeDiff = Date.now() - new Date(cleanTimestamp).getTime();
   return timeDiff < ONLINE_THRESHOLD_MS;
 }
 
