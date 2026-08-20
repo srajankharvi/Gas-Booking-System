@@ -4,7 +4,7 @@ import {
   Activity, Home, Calendar, Clock, BarChart3, Bell, Settings, 
   Terminal, ShieldCheck, LogOut, Menu, X, CheckSquare, Trash2 
 } from 'lucide-react';
-import { apiClient } from '../api/client';
+import { apiClient, API_BASE_URL } from '../api/client';
 
 export default function Layout() {
   const [user, setUser] = useState<any>(null);
@@ -38,7 +38,7 @@ export default function Layout() {
     fetchNotifications();
 
     // Establish WebSocket Connection for Real-Time Updates
-    const wsUrl = `ws://127.0.0.1:8000/api/ws/${parsedUser.id}`;
+    const wsUrl = `${API_BASE_URL.replace('http', 'ws')}/api/ws/${parsedUser.id}`;
     const websocket = new WebSocket(wsUrl);
 
     websocket.onmessage = (event) => {
