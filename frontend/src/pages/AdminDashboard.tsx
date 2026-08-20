@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
-  Users, AlertTriangle, ShieldAlert, Clock, 
-  CheckCircle2, ArrowRight, RefreshCw, Radio, WifiOff, Flame
+  Users, AlertTriangle, Clock, 
+  ArrowRight, RefreshCw, Radio, WifiOff, Flame, Package
 } from 'lucide-react';
 import { apiClient } from '../api/client';
 
@@ -57,15 +57,15 @@ export default function AdminDashboard() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'Pending': return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20';
-      case 'Confirmed': return 'bg-sky-500/10 text-sky-400 border-sky-500/20';
-      case 'Processing': return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-      case 'Out for Delivery': return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
-      case 'Delivered': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-      case 'Required': return 'bg-rose-500/10 text-rose-400 border-rose-500/20 animate-pulse';
+      case 'Pending': return 'bg-yellow-50 text-yellow-700 border-yellow-200';
+      case 'Confirmed': return 'bg-sky-50 text-sky-700 border-sky-200';
+      case 'Processing': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'Out for Delivery': return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'Delivered': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'Required': return 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse';
       case 'None':
-      case 'Not Required': return 'bg-slate-800 text-slate-500 border-slate-700/50';
-      default: return 'bg-slate-800 text-slate-500 border-slate-700/50';
+      case 'Not Required': return 'bg-slate-50 text-slate-500 border-slate-200';
+      default: return 'bg-slate-50 text-slate-500 border-slate-200';
     }
   };
 
@@ -82,9 +82,9 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[70vh]">
+      <div className="flex flex-col items-center justify-center min-h-[50vh]">
         <div className="h-10 w-10 border-4 border-sky-500 border-t-transparent rounded-full animate-spin" />
-        <span className="text-slate-400 mt-4 text-xs font-semibold font-sans">Accessing admin systems...</span>
+        <span className="text-slate-400 mt-4 text-xs font-semibold">Accessing admin systems...</span>
       </div>
     );
   }
@@ -92,168 +92,160 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-slate-100 tracking-tight">Admin Control Center</h2>
-          <p className="text-slate-400 text-xs mt-1">Platform management, cylinders diagnostic monitors, and booking dispatch tools.</p>
-        </div>
-        <button 
-          onClick={fetchAdminData}
-          disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-800 border border-slate-700/50 hover:bg-slate-7.5 text-xs text-slate-300 font-bold rounded-xl cursor-pointer disabled:opacity-50 transition-all"
-        >
-          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-          {refreshing ? 'Refreshing...' : 'Refresh Feeds'}
-        </button>
-      </header>
-
-      {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-          {[
-            { label: 'Total Users', val: stats.total_users, icon: Users, color: 'text-sky-400 bg-sky-500/10' },
-            { label: 'Active IoT', val: stats.active_cylinders, icon: Radio, color: 'text-emerald-400 bg-emerald-500/10' },
-            { label: 'Offline', val: cylinders.filter(c => !c.is_online).length, icon: WifiOff, color: 'text-slate-400 bg-slate-500/10' },
-            { label: 'Avg Usage', val: '0.45 kg/d', icon: Flame, color: 'text-indigo-400 bg-indigo-500/10' },
-            { label: 'Low Alert', val: stats.low_gas_cylinders, icon: AlertTriangle, color: 'text-amber-400 bg-amber-500/10' },
-            { label: 'Critical Alert', val: stats.critical_cylinders, icon: ShieldAlert, color: 'text-rose-400 bg-rose-500/10' },
-            { label: 'Pending Orders', val: stats.pending_bookings, icon: Clock, color: 'text-yellow-400 bg-yellow-500/10' },
-            { label: 'Today Dispatched', val: stats.today_deliveries, icon: CheckCircle2, color: 'text-purple-400 bg-purple-500/10' },
-          ].map((item, idx) => {
-            const Icon = item.icon;
-            return (
-              <div key={idx} className="bg-slate-850 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
-                <div className={`p-2.5 rounded-xl w-fit ${item.color}`}>
-                  <Icon size={16} />
-                </div>
-                <div>
-                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">{item.label}</span>
-                  <span className="text-xl font-bold text-slate-100 block mt-1">{item.val}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-6">
+      {/* Overview Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         
-        <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 shadow-md overflow-hidden">
-          <h3 className="font-bold text-slate-100 text-sm mb-4">Live Cylinder Directory</h3>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-500 uppercase tracking-widest text-[9px] font-bold">
-                  <th className="pb-3">Cylinder ID</th>
-                  <th className="pb-3">User</th>
-                  <th className="pb-3">Gas Level</th>
-                  <th className="pb-3">Status</th>
-                  <th className="pb-3">Last Updated</th>
-                  <th className="pb-3">Booking</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                {cylinders.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-500">
-                      No connected cylinders logged.
-                    </td>
-                  </tr>
-                ) : (
-                  cylinders.map((cyl, idx) => {
-                    // Determine booking status for this cylinder based on active bookings
-                    const activeBooking = bookings.find(b => b.cylinder_id === cyl.id && !['Delivered', 'Cancelled'].includes(b.status));
-                    const bookingStatus = activeBooking ? activeBooking.status : (cyl.level < 15 ? 'Required' : 'None');
-
-                    return (
-                      <tr key={idx} className="text-slate-350 hover:bg-slate-800/30">
-                        <td className="py-3.5">
-                          <span className="font-bold text-slate-200 block">{cyl.id}</span>
-                          <span className={`inline-flex items-center gap-1 text-[9px] font-bold mt-1 ${cyl.is_online ? 'text-green-400' : 'text-slate-500'}`}>
-                            <span className={`h-1.5 w-1.5 rounded-full ${cyl.is_online ? 'bg-green-500' : 'bg-slate-600'}`} />
-                            {cyl.is_online ? 'ONLINE' : 'OFFLINE'}
-                          </span>
-                        </td>
-                        <td className="py-3.5">
-                          <span className="block font-bold text-slate-200">{cyl.user_name}</span>
-                          <span className="text-[10px] text-slate-500 font-mono">{cyl.user_email}</span>
-                        </td>
-                        <td className="py-3.5 font-bold text-slate-200">
-                          <div className="flex items-center gap-2">
-                            <div className="w-16 bg-slate-900 rounded-full h-1.5 overflow-hidden">
-                              <div 
-                                className={`h-full rounded-full ${
-                                  cyl.level < 10 ? 'bg-rose-500' : cyl.level < 20 ? 'bg-orange-500' : cyl.level < 40 ? 'bg-amber-500' : 'bg-sky-500'
-                                }`} 
-                                style={{ width: `${cyl.level}%` }}
-                              />
-                            </div>
-                            <span>{cyl.level.toFixed(0)}%</span>
-                          </div>
-                          <span className="text-[9px] text-slate-500 font-normal">{cyl.weight.toFixed(2)} kg</span>
-                        </td>
-                        <td className="py-3.5">
-                          <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${
-                            cyl.status === 'Good' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                            cyl.status === 'Normal' ? 'bg-sky-500/10 text-sky-400 border-sky-500/20' :
-                            cyl.status === 'Low' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
-                            'bg-rose-500/10 text-rose-400 border-rose-500/20 animate-pulse'
-                          }`}>
-                            {cyl.status}
-                          </span>
-                        </td>
-                        <td className="py-3.5 font-semibold text-slate-400">
-                          {formatLastUpdated(cyl.last_seen)}
-                        </td>
-                        <td className="py-3.5">
-                          <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${getStatusBadge(bookingStatus)}`}>
-                            {bookingStatus}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+        {/* Total Users */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-sky-50 text-sky-600 rounded-xl">
+            <Users size={20} />
+          </div>
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-extrabold">Registered Users</span>
+            <span className="text-xl font-black text-slate-950 mt-0.5 block">{stats?.total_users || 0} Users</span>
           </div>
         </div>
 
-        <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 shadow-md">
-          <h3 className="font-bold text-slate-100 text-sm mb-4">Booking Dispatches</h3>
+        {/* Active Cylinders */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+            <Flame size={20} />
+          </div>
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-extrabold">Active Monitors</span>
+            <span className="text-xl font-black text-slate-950 mt-0.5 block">{stats?.total_cylinders || 0} Devices</span>
+          </div>
+        </div>
+
+        {/* Pending Deliveries */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-yellow-50 text-yellow-600 rounded-xl">
+            <Package size={20} />
+          </div>
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-extrabold">Pending Orders</span>
+            <span className="text-xl font-black text-slate-950 mt-0.5 block">{stats?.pending_bookings || 0} Orders</span>
+          </div>
+        </div>
+
+        {/* Critical Refills */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
+            <AlertTriangle size={20} />
+          </div>
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-extrabold">Refills Required</span>
+            <span className="text-xl font-black text-slate-950 mt-0.5 block">{stats?.critical_refills || 0} Low Gas</span>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Main Splits view */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Left column: Manage Deliveries */}
+        <div className="lg:col-span-2 space-y-6">
+          
+          <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                <Clock size={16} className="text-sky-500" />
+                Active Refill Orders
+              </h3>
+              <button 
+                onClick={fetchAdminData}
+                disabled={refreshing}
+                className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 rounded-xl transition-all cursor-pointer animate-none"
+              >
+                <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
+              </button>
+            </div>
+
+            {bookings.length === 0 ? (
+              <div className="text-center py-16 text-slate-400">
+                <Clock size={36} className="mx-auto text-slate-350 mb-3" />
+                <p className="text-xs font-semibold">No active refill requests in queue.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-semibold">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400">
+                      <th className="py-3 pr-4">Order ID</th>
+                      <th className="py-3 px-4">Address</th>
+                      <th className="py-3 px-4">Preference</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 pl-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bookings.map((b) => (
+                      <tr key={b.id} className="border-b border-slate-100 hover:bg-slate-50/50 text-slate-700">
+                        <td className="py-3.5 pr-4 font-mono font-bold text-[11px] text-sky-600">{b.booking_id}</td>
+                        <td className="py-3.5 px-4 max-w-[150px] truncate">{b.delivery_address}</td>
+                        <td className="py-3.5 px-4 uppercase text-[10px]">{b.delivery_preference}</td>
+                        <td className="py-3.5 px-4">
+                          <span className={`px-2 py-0.5 rounded-full border text-[9px] font-bold ${getStatusBadge(b.status)}`}>
+                            {b.status}
+                          </span>
+                        </td>
+                        <td className="py-3.5 pl-4 text-right">
+                          {b.status !== 'Delivered' && b.status !== 'Cancelled' && (
+                            <button
+                              onClick={() => handleUpdateStatus(b.id, b.status)}
+                              className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-lg border border-sky-100 flex items-center gap-1.5 ml-auto cursor-pointer text-[10px]"
+                            >
+                              Dispatch <ArrowRight size={10} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right column: Monitor Hardware Telemetry */}
+        <div className="lg:col-span-1 bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm space-y-6">
+          <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+            <Radio size={16} className="text-sky-500" />
+            Hardware Diagnostics Monitor
+          </h3>
 
           <div className="space-y-4">
-            {bookings.filter(b => b.status !== 'Delivered' && b.status !== 'Cancelled').length === 0 ? (
-              <p className="text-slate-500 text-xs py-4 text-center">No active bookings require dispatch approvals.</p>
+            {cylinders.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                <WifiOff size={32} className="mx-auto text-slate-350 mb-2" />
+                <p className="text-xs font-semibold">No active nodes reporting telemetry.</p>
+              </div>
             ) : (
-              bookings
-                .filter(b => b.status !== 'Delivered' && b.status !== 'Cancelled')
-                .map((b) => (
-                  <div key={b.id} className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-xs">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-100">{b.booking_id}</span>
-                        <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${getStatusBadge(b.status)}`}>
-                          {b.status}
-                        </span>
-                      </div>
-                      <p className="text-slate-500">
-                        Delivery address: <span className="text-slate-350 font-medium">{b.delivery_address}</span>
-                      </p>
-                      <p className="text-[10px] text-slate-600">
-                        Requested: {new Date(b.created_at).toLocaleString()}
-                      </p>
-                    </div>
-
-                    <button 
-                      onClick={() => handleUpdateStatus(b.id, b.status)}
-                      className="px-4 py-2 bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl text-[10px] flex items-center gap-1 cursor-pointer transition-all self-end md:self-auto shadow-md"
-                    >
-                      Advance Status
-                      <ArrowRight size={12} />
-                    </button>
+              cylinders.map((c) => (
+                <div key={c.id} className="p-4 bg-slate-50 border border-slate-200/60 rounded-2xl space-y-2.5 shadow-inner">
+                  <div className="flex justify-between items-center">
+                    <span className="font-black text-xs text-slate-900 truncate max-w-[120px]">{c.name}</span>
+                    <span className={`px-2 py-0.5 rounded-full border text-[8px] font-bold ${
+                      c.status === 'LOW' || c.status === 'CRITICAL' ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    }`}>
+                      {c.status}
+                    </span>
                   </div>
-                ))
+                  
+                  <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-slate-400">
+                    <div>
+                      <span>Remaining:</span>
+                      <span className="block text-slate-800 text-xs font-black mt-0.5">{Math.round(c.current_percent)}%</span>
+                    </div>
+                    <div>
+                      <span>Last Seen:</span>
+                      <span className="block text-slate-700 mt-0.5 truncate">{formatLastUpdated(c.last_seen)}</span>
+                    </div>
+                  </div>
+                </div>
+              ))
             )}
           </div>
         </div>

@@ -10,6 +10,6 @@
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900;
+    @apply bg-[#F7F9FC] text-slate-900 font-sans antialiased;
   }
 }

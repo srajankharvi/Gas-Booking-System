@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Terminal, RadioOff, ShieldAlert, Truck, Sparkles, Sliders } from 'lucide-react';
+import { Terminal, RadioOff, ShieldAlert, Truck, Sliders } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { isMockModeEnabled, mockCylinderStore, mockBookingsStore } from '../mock/gasMockData';
 
@@ -60,7 +60,6 @@ export default function Simulator() {
         mockCylinderStore.set({ current_percent: extraParams.percent });
       } else if (action === 'adjust') {
         const current = mockCylinderStore.get();
-        // 0.5 kg adjustment
         const deltaPercent = (extraParams.amount / (current.full_weight - current.tare_weight)) * 100;
         mockCylinderStore.set({ current_percent: Math.max(0, Math.min(100, current.current_percent + deltaPercent)) });
       } else if (action === 'set_temp') {
@@ -98,32 +97,32 @@ export default function Simulator() {
     setStatusMsg('Sending simulator packet...');
     try {
       const res = await apiClient.post('/api/simulator/action', {
-        action,
         cylinder_id: cylinder.id,
+        action,
         ...extraParams
       });
-      setStatusMsg(res.data.message || 'State updated.');
-      await fetchCylinder();
+      setStatusMsg(res.data.message || 'Simulator event submitted.');
+      fetchCylinder();
     } catch (err: any) {
-      setStatusMsg(err.response?.data?.detail || 'Simulation packet failed.');
+      setStatusMsg(err.response?.data?.detail || 'Packet submission failed.');
     }
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[70vh]">
+      <div className="flex flex-col items-center justify-center min-h-[50vh]">
         <div className="h-10 w-10 border-4 border-sky-500 border-t-transparent rounded-full animate-spin" />
-        <span className="text-slate-400 mt-4 text-xs font-semibold font-mono">Initializing simulator panel...</span>
+        <span className="text-slate-400 mt-4 text-xs font-semibold">Linking virtual nodes...</span>
       </div>
     );
   }
 
   if (!cylinder) {
     return (
-      <div className="text-center py-20 bg-slate-850 border border-slate-800 rounded-3xl p-8 max-w-lg mx-auto">
-        <ShieldAlert size={48} className="mx-auto text-rose-500 mb-4" />
-        <h2 className="text-xl font-bold text-slate-100">No Cylinders Configured</h2>
-        <p className="text-slate-400 mt-2">Cannot simulate feeds. Register a standard user account or turn on the Development Simulator settings.</p>
+      <div className="text-center py-16 bg-white rounded-2xl border border-slate-200/80 p-8 max-w-lg mx-auto shadow-sm">
+        <ShieldAlert size={48} className="mx-auto text-amber-500 mb-4" />
+        <h2 className="text-lg font-black text-slate-900">No Cylinder Configured</h2>
+        <p className="text-xs text-slate-400 mt-2">Go to settings to enable mock simulator mode or link a cylinder alias.</p>
       </div>
     );
   }
@@ -131,150 +130,86 @@ export default function Simulator() {
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       
-      {/* Dev warning tag */}
-      <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-3">
-          <Terminal className="text-amber-400 animate-pulse" size={20} />
-          <div>
-            <h3 className="font-bold text-slate-100 text-xs uppercase tracking-wider">
-              {cylinder.id === 'CYL-DEMO-001' ? 'Local Simulation Mode' : 'Development Environment Active'}
-            </h3>
-            <p className="text-[10px] text-slate-400 mt-0.5">
-              {cylinder.id === 'CYL-DEMO-001' ? 'This control panel interacts with the in-memory mock IoT cylinder.' : 'This IoT weight-sensor simulator will bypass physical ESP32 requirements.'}
-            </p>
-          </div>
+      {statusMsg && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex gap-3 text-emerald-400 font-mono text-xs shadow-md">
+          <Terminal size={16} className="shrink-0 animate-pulse text-emerald-500" />
+          <span>&gt; {statusMsg}</span>
         </div>
-        <span className="px-2 py-0.5 bg-amber-500 text-slate-900 font-extrabold text-[9px] rounded-lg tracking-widest uppercase">
-          Dev Mode
-        </span>
-      </div>
+      )}
 
-      {/* Simulator Control Grid */}
-      <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 shadow-md space-y-6">
-        
-        {/* Status display */}
-        <div className="flex justify-between items-center bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
-          <div className="text-xs">
-            <span className="text-slate-500 uppercase tracking-widest block font-bold text-[9px] mb-0.5">
-              {cylinder.id === 'CYL-DEMO-001' ? 'Mock Cylinder Level (SIM)' : 'Mock Cylinder Level'}
-            </span>
-            <span className="text-slate-200 font-bold font-mono">
-              Weight: {cylinder.current_weight.toFixed(2)} kg ({cylinder.current_percent.toFixed(1)}%)
-            </span>
-          </div>
-          <span className="text-[10px] text-sky-400 font-bold font-mono bg-sky-500/10 px-2.5 py-1 rounded-xl">
-            API Key / ID: {cylinder.id === 'CYL-DEMO-001' ? 'CYL-DEMO-001' : cylinder.api_key}
-          </span>
-        </div>
+      <div className="bg-white border border-slate-200/80 rounded-3xl p-6 md:p-8 shadow-sm">
+        <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2 mb-1">
+          <Sliders size={16} className="text-sky-500" />
+          IoT Load Cell Simulator
+        </h3>
+        <p className="text-xs text-slate-400 mb-6 font-semibold">Simulate load cell weight changes, temperature shifts, and delivery swaps.</p>
 
-        {/* Action button blocks */}
-        <div className="space-y-4">
+        <div className="space-y-6">
           
-          {/* Preset Percentages */}
-          <div className="space-y-2">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Diagnostic Presets</label>
-            <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-              {[100, 75, 50, 32, 25, 10, 5].map((val) => (
+          <div>
+            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">Preset LPG Percentages</label>
+            <div className="grid grid-cols-5 gap-2.5">
+              {[100, 75, 45, 12, 5].map((lvl) => (
                 <button
-                  key={val}
-                  onClick={() => triggerAction('set_level', { percent: val })}
-                  className="px-2 py-3 bg-slate-800 border border-slate-700/50 hover:bg-slate-7.5 text-[10px] font-bold rounded-xl text-slate-200 hover:text-white cursor-pointer transition-all shadow-sm"
+                  key={lvl}
+                  onClick={() => triggerAction('set_level', { percent: lvl })}
+                  className={`py-2.5 rounded-xl border text-xs font-black text-center cursor-pointer transition-colors ${
+                    lvl <= 15 
+                      ? 'bg-rose-50 border-rose-200 hover:bg-rose-100/60 text-rose-600' 
+                      : lvl <= 45 
+                      ? 'bg-amber-50 border-amber-200 hover:bg-amber-100/60 text-amber-600'
+                      : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700'
+                  }`}
                 >
-                  Set {val}%
+                  {lvl}%
                 </button>
               ))}
             </div>
           </div>
 
-          {/* Increment / Decrement adjustments */}
-          <div className="space-y-2 pt-2">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Fine Adjustments</label>
-            <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">Burn Simulation Steps</label>
+            <div className="grid grid-cols-2 gap-4">
               <button
-                onClick={() => triggerAction('adjust', { amount: 0.5 })}
-                className="py-3 bg-slate-800 hover:bg-emerald-500/10 border border-slate-700/50 hover:border-emerald-500/30 text-emerald-400 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                onClick={() => triggerAction('adjust', { amount: -0.2 })}
+                className="py-3 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-black transition-colors cursor-pointer"
               >
-                <Sparkles size={14} />
-                Increase Gas (+0.5 kg)
+                Burn Gas (-0.2 kg)
               </button>
               <button
-                onClick={() => triggerAction('adjust', { amount: -0.5 })}
-                className="py-3 bg-slate-800 hover:bg-rose-500/10 border border-slate-700/50 hover:border-rose-500/30 text-rose-400 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                onClick={() => triggerAction('adjust', { amount: 0.2 })}
+                className="py-3 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-black transition-colors cursor-pointer"
               >
-                <Sliders size={14} />
-                Decrease Gas (-0.5 kg)
+                Refill Gas (+0.2 kg)
               </button>
             </div>
           </div>
 
-          {/* Temperature Setting */}
-          <div className="space-y-2 pt-2">
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Temperature (°C)</label>
-            <div className="flex gap-3">
-              <input 
-                type="number"
-                value={cylinder.temperature}
-                onChange={(e) => triggerAction('set_temp', { temp: parseFloat(e.target.value) || 28 })}
-                className="w-28 px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-slate-200 text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-500 font-mono"
-              />
-              <button
-                onClick={() => triggerAction('set_temp', { temp: 28 })}
-                className="px-4 py-2.5 bg-slate-800 hover:bg-slate-7.5 border border-slate-700 text-xs rounded-xl font-bold text-slate-350 cursor-pointer transition-all"
-              >
-                Set 28°C
-              </button>
-            </div>
-          </div>
-
-          {/* Simulate Low Gas / Critical Gas */}
-          <div className="space-y-2 pt-2">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Alert States Simulation</label>
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => triggerAction('set_level', { percent: 32 })}
-                className="py-3 bg-slate-800 hover:bg-amber-500/10 border border-slate-700/50 hover:border-amber-500/30 text-amber-400 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-sm"
-              >
-                Simulate Low Gas (32%)
-              </button>
-              <button
-                onClick={() => triggerAction('set_level', { percent: 5 })}
-                className="py-3 bg-slate-800 hover:bg-rose-500/10 border border-slate-700/50 hover:border-rose-500/30 text-rose-400 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-sm"
-              >
-                Simulate Critical Gas (5%)
-              </button>
-            </div>
-          </div>
-
-          {/* Delivery & Network Connection States */}
-          <div className="space-y-2 pt-2">
-            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Environment Events</label>
-            <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">Refill & Hardware Events</label>
+            <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={() => triggerAction('delivery')}
-                className="py-3 bg-slate-800 hover:bg-sky-500/10 border border-slate-700/50 hover:border-sky-500/30 text-sky-400 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                className="py-3 bg-sky-50 hover:bg-sky-100/60 border border-sky-100/50 text-sky-600 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
               >
                 <Truck size={14} />
-                Simulate Delivery (Swap Full)
+                Simulate Delivery (100% full)
               </button>
               <button
                 onClick={() => triggerAction('disconnect')}
-                className="py-3 bg-slate-800 hover:bg-slate-700 border border-slate-700/50 text-slate-400 font-bold rounded-xl text-xs flex items-center justify-center gap-2 cursor-pointer shadow-sm"
+                className={`py-3 rounded-xl border text-xs font-black flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                  cylinder.is_online || cylinder.isConnected 
+                    ? 'bg-rose-50 border-rose-200 hover:bg-rose-100/60 text-rose-600' 
+                    : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100 text-emerald-600'
+                }`}
               >
                 <RadioOff size={14} />
-                {cylinder.is_online ? 'Simulate Disconnect' : 'Simulate Connect'}
+                {cylinder.is_online || cylinder.isConnected ? 'Simulate Disconnect' : 'Simulate Reconnect'}
               </button>
             </div>
           </div>
 
         </div>
-
-        {/* Status log feedback */}
-        {statusMsg && (
-          <div className="bg-slate-900 border border-slate-800 text-[10px] font-bold font-mono text-sky-400 p-3 rounded-xl">
-            Console feed: {statusMsg}
-          </div>
-        )}
-
       </div>
 
     </div>

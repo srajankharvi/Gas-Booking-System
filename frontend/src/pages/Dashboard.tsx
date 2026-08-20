@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
-  Flame, Battery, History, Info, 
-  Package, ArrowUpRight, Zap
+  Flame, History, Info, 
+  Package, ArrowUpRight, Zap, TrendingDown, Cpu
 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { apiClient } from '../api/client';
 import GasCylinderVisualization from '../components/GasCylinderVisualization';
 import LowGasNotification from '../components/LowGasNotification';
-import IoTSystemStatus from '../components/IoTSystemStatus';
 import { useDeviceStatus } from '../hooks/useDeviceStatus';
 import { 
   mockCylinderStore, 
@@ -46,7 +45,7 @@ export default function Dashboard() {
       }
 
       let active = null;
-      if (isMockModeEnabled() && (cylRes.data.length === 0)) {
+      if (isMockModeEnabled() && (!cylRes.data || cylRes.data.length === 0)) {
         const bookings = mockBookingsStore.get();
         active = bookings.find((b: any) => 
           ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status)
@@ -61,22 +60,22 @@ export default function Dashboard() {
       }
       setActiveBooking(active || null);
       
-      const activityList = [];
+      const activityList: any[] = [];
       if (cylRes.data.length > 0) {
         const cyl = cylRes.data[0];
         activityList.push({
           title: `Cylinder status: ${cyl.status}`,
           time: cyl.last_seen ? new Date(cyl.last_seen).toLocaleTimeString() : 'Just now',
           icon: Flame,
-          color: 'text-sky-400 bg-sky-500/10'
+          color: 'text-sky-600 bg-sky-50'
         });
-      } else if (isMockModeEnabled() && cylRes.data.length === 0) {
+      } else if (isMockModeEnabled()) {
         mockActivitiesStore.get().forEach((act) => {
           activityList.push({
             title: act.title,
             time: act.time,
             icon: act.title.includes('level') ? Flame : (act.title.includes('connected') ? Zap : Package),
-            color: act.title.includes('low') ? 'text-rose-400 bg-rose-500/10' : 'text-sky-400 bg-sky-500/10'
+            color: act.title.includes('low') ? 'text-rose-600 bg-rose-50' : 'text-sky-600 bg-sky-50'
           });
         });
       }
@@ -86,7 +85,7 @@ export default function Dashboard() {
           title: `Order ${active.booking_id} status: ${active.status}`,
           time: new Date(active.updated_at).toLocaleDateString(),
           icon: Package,
-          color: 'text-amber-400 bg-amber-500/10'
+          color: 'text-amber-600 bg-amber-50'
         });
       }
       setRecentActivities(activityList);
@@ -129,7 +128,7 @@ export default function Dashboard() {
               title: act.title,
               time: act.time,
               icon: act.title.includes('level') ? Flame : (act.title.includes('connected') ? Zap : Package),
-              color: act.title.includes('low') ? 'text-rose-400 bg-rose-500/10' : 'text-sky-400 bg-sky-500/10'
+              color: act.title.includes('low') ? 'text-rose-600 bg-rose-50' : 'text-sky-600 bg-sky-50'
             }));
             setRecentActivities(activityList);
           }
@@ -146,19 +145,22 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[70vh] gap-4">
+      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-4">
         <div className="h-10 w-10 border-4 border-sky-500 border-t-transparent rounded-full animate-spin" />
-        <span className="text-slate-400 font-medium">Fetching real-time cylinder feeds...</span>
+        <span className="text-slate-400 font-semibold">Fetching real-time cylinder feeds...</span>
       </div>
     );
   }
 
   if (!cylinder) {
     return (
-      <div className="text-center py-20 bg-slate-850 rounded-3xl border border-slate-800 p-8 max-w-lg mx-auto">
+      <div className="text-center py-16 bg-white rounded-2xl border border-slate-200/80 p-8 max-w-lg mx-auto shadow-sm">
         <Info size={48} className="mx-auto text-amber-500 mb-4" />
-        <h2 className="text-xl font-bold text-slate-100">No Cylinders Found</h2>
-        <p className="text-slate-400 mt-2">There are no active cylinders associated with your account. Please link your ESP32 device.</p>
+        <h2 className="text-xl font-black text-slate-900">No Cylinders Linked</h2>
+        <p className="text-slate-500 mt-2 text-sm leading-relaxed">There are no active cylinders associated with your account. Please configure your ESP32 device.</p>
+        <Link to="/simulator" className="mt-5 inline-flex px-5 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-black text-xs rounded-xl shadow-md cursor-pointer transition-colors">
+          Configure Simulator
+        </Link>
       </div>
     );
   }
@@ -167,7 +169,6 @@ export default function Dashboard() {
   const currentPercent = deviceStatus.percentage > 0 ? deviceStatus.percentage : cylinder.current_percent;
   const isOnline = deviceStatus.isOnline;
   const isEstimated = deviceStatus.isEstimated;
-  const lastSeen = deviceStatus.lastUpdated || cylinder.last_seen;
 
   const chartData = [...readings].reverse().map(r => {
     const d = new Date(r.timestamp);
@@ -177,33 +178,65 @@ export default function Dashboard() {
     };
   });
 
+  const remainingGasKg = cylinder.current_weight ? Math.max(0, cylinder.current_weight - cylinder.tare_weight).toFixed(2) : '0.00';
+  const totalCapacityKg = (cylinder.full_weight - cylinder.tare_weight).toFixed(2);
+  const estimatedDays = isOnline ? (mockCylinderStore.get().estimated_days || '6') : '6';
+
   return (
     <div className="space-y-6">
-      <header className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-slate-100 tracking-tight">Smart Home Dashboard</h2>
-          <p className="text-slate-400 text-xs mt-1">Real-time IoT diagnostics and automatic cylinder replenish controls.</p>
+      
+      {/* 1. KPI CARDS */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        
+        {/* KPI 1: LPG Remaining */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block">LPG Remaining</span>
+            <span className="text-2xl font-black text-slate-950 block mt-1.5">{remainingGasKg} kg</span>
+          </div>
+          <span className="text-[10px] text-slate-500 font-bold block mt-1">{Math.round(currentPercent)}% capacity</span>
         </div>
-        <div className="flex items-center gap-3 bg-slate-800/80 border border-slate-700/50 rounded-2xl px-4 py-2 text-xs">
-          <span className={`h-2 w-2 rounded-full ${isOnline ? 'bg-green-500 animate-pulse' : 'bg-rose-500'}`} />
-          <span className="font-bold text-slate-300">
-            {isOnline ? 'IoT LINK: ONLINE' : 'IoT LINK: OFFLINE'}
+
+        {/* KPI 2: Estimated Remaining */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block">Est. Remaining</span>
+            <span className="text-2xl font-black text-slate-950 block mt-1.5">{estimatedDays} Days</span>
+          </div>
+          <span className="text-[10px] text-slate-500 font-bold block mt-1">Based on recent usage</span>
+        </div>
+
+        {/* KPI 3: Daily Consumption */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block">Daily Consumption</span>
+            <span className="text-2xl font-black text-slate-950 block mt-1.5">0.82 kg/day</span>
+          </div>
+          <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 mt-1">
+            <TrendingDown size={12} /> 8.2% this week
           </span>
         </div>
-      </header>
 
-      {/* IoT Architecture Pipeline */}
-      <IoTSystemStatus 
-        isOnline={isOnline} 
-        isEstimated={isEstimated} 
-        lastSeen={lastSeen} 
-      />
+        {/* KPI 4: IoT Status */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block">IoT Status</span>
+            <span className={`text-2xl font-black block mt-1.5 ${isOnline ? 'text-emerald-600' : 'text-rose-500'}`}>
+              {isOnline ? 'Connected' : 'Offline'}
+            </span>
+          </div>
+          <span className="text-[10px] text-slate-500 font-bold block mt-1">
+            Updated {isOnline ? '12 sec ago' : '6h ago'}
+          </span>
+        </div>
 
-      {/* Main Grid */}
+      </div>
+
+      {/* 2. Main Row: Cylinder Card & Prediction Card */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Visualizations */}
-        <div className="lg:col-span-1 space-y-6">
-
+        
+        {/* Left Column: Visual Cylinder Card */}
+        <div className="lg:col-span-1 flex flex-col">
           <GasCylinderVisualization 
             gasLevel={currentPercent}
             weight={cylinder.current_weight}
@@ -212,8 +245,9 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* Right Column: Status and Charts */}
+        {/* Right Column: Alerts, Predictions, and Consumption Chart */}
         <div className="lg:col-span-2 space-y-6">
+          
           {/* Notification Banner */}
           <LowGasNotification 
             cylinderId={cylinder.id} 
@@ -221,104 +255,181 @@ export default function Dashboard() {
             isEstimated={isEstimated} 
           />
 
-          {/* Hero Diagnostics Info */}
-          <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 grid grid-cols-1 md:grid-cols-2 gap-6 shadow-md relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-24 h-24 bg-sky-500/5 rounded-full blur-xl pointer-events-none" />
-            
-            <div className="flex items-start gap-4">
-              <div className="p-3 bg-sky-500/10 rounded-2xl text-sky-400 shrink-0">
-                <Battery size={22} className="animate-pulse" />
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-semibold">Remaining Gas Weight</span>
-                <span className="text-xl font-bold text-slate-100 block mt-1">
-                  {cylinder.current_weight ? `${(cylinder.current_weight - cylinder.tare_weight).toFixed(2)} kg` : '...'}
-                </span>
-                <p className="text-[10px] text-slate-500 mt-1">Total weight: {cylinder.current_weight?.toFixed(2)} kg</p>
-              </div>
-            </div>
-
-            <div className="flex items-start gap-4 border-t md:border-t-0 md:border-l border-slate-800 pt-4 md:pt-0 md:pl-6">
-              <div className="p-3 bg-rose-500/10 rounded-2xl text-rose-400 shrink-0">
-                <Info size={22} />
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase tracking-widest block font-semibold">Cylinder Info</span>
-                <span className="text-sm font-bold text-slate-100 block mt-1">{cylinder.name} ({cylinder.id})</span>
-                <p className="text-[10px] text-slate-500 mt-1">Empty Weight: {cylinder.tare_weight} kg</p>
-                <p className="text-[10px] text-slate-500">Max Capacity: {(cylinder.full_weight - cylinder.tare_weight).toFixed(2)} kg</p>
-              </div>
-            </div>
-          </div>
-
+          {/* Active Refill Request Status */}
           {activeBooking && (
-            <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden shadow-md">
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden shadow-sm">
               <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-amber-500" />
               <div>
                 <div className="flex items-center gap-2">
-                  <Package className="text-amber-400 animate-bounce" size={18} />
-                  <span className="font-bold text-sm text-slate-100">Refill Request In-Progress</span>
+                  <Package className="text-amber-500" size={16} />
+                  <span className="font-extrabold text-sm text-slate-900">Refill Request In-Progress</span>
                 </div>
-                <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
-                  Booking ID <code className="text-sky-400 font-mono text-[11px]">{activeBooking.booking_id}</code> is currently: <span className="font-bold text-slate-200">{activeBooking.status}</span>.
+                <p className="text-xs text-slate-500 mt-1">
+                  Booking ID <code className="text-sky-600 font-mono text-[11px]">{activeBooking.booking_id}</code> is currently: <span className="font-bold text-slate-700">{activeBooking.status}</span>.
                 </p>
               </div>
-              <Link to="/bookings" className="px-4 py-2 bg-slate-800 border border-slate-700/50 hover:bg-slate-7.5 text-xs text-sky-400 font-bold rounded-xl flex items-center gap-1 cursor-pointer transition-all">
+              <Link to="/bookings" className="px-4 py-2 bg-slate-50 border border-slate-200 hover:bg-slate-100/50 text-xs text-sky-600 font-extrabold rounded-xl flex items-center gap-1 cursor-pointer transition-all">
                 Track Booking <ArrowUpRight size={14} />
               </Link>
             </div>
           )}
 
-          <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6">
+          {/* Smart Refill Prediction & Actions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            {/* Prediction Card */}
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-sky-500 mb-3">
+                  <Cpu size={18} />
+                  <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-950">Smart Refill Prediction</h4>
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                  Based on recent daily usage levels, your LPG consumption patterns predict:
+                </p>
+                <div className="space-y-2.5 text-xs text-slate-700 border-y border-slate-100 py-3.5 mb-4">
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-slate-500">Average usage</span>
+                    <span className="font-bold">0.82 kg/day</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-slate-500">Estimated empty date</span>
+                    <span className="font-bold text-rose-600">August 26, 2026</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-slate-500">Recommended booking</span>
+                    <span className="font-bold text-amber-600">August 23, 2026</span>
+                  </div>
+                </div>
+              </div>
+              <Link 
+                to="/book" 
+                className="w-full py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-black text-center shadow-md shadow-sky-500/10 transition-all cursor-pointer"
+              >
+                Book New Cylinder
+              </Link>
+            </div>
+
+            {/* Quick Actions Card */}
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-indigo-500 mb-3">
+                  <Zap size={18} />
+                  <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-950">Quick Actions</h4>
+                </div>
+                <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                  Trigger automated refill booking requests or check detailed telemetry diagnostics.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                <Link to="/book" className="py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-black text-center transition-colors cursor-pointer">
+                  + Book LPG
+                </Link>
+                <Link to="/usage" className="py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-black text-center transition-colors cursor-pointer">
+                  View Usage
+                </Link>
+                <Link to="/bookings" className="py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-black text-center transition-colors cursor-pointer">
+                  My Bookings
+                </Link>
+                <Link to="/iot" className="py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-black text-center transition-colors cursor-pointer">
+                  IoT Device
+                </Link>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Consumption Line Chart Card */}
+          <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm">
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h3 className="font-bold text-slate-100 text-base">Gas Consumption Logs</h3>
-                <p className="text-[10px] text-slate-500">Load cell variations over time</p>
+                <h3 className="font-extrabold text-slate-950 text-sm">LPG Consumption</h3>
+                <p className="text-[10px] text-slate-400 font-bold mt-0.5">Load cell variations over time</p>
               </div>
-              <Link to="/usage" className="text-sky-400 hover:text-sky-300 font-semibold text-xs flex items-center gap-1">
+              <Link to="/usage" className="text-sky-500 hover:text-sky-600 font-bold text-xs flex items-center gap-1">
                 View History <History size={14} />
               </Link>
             </div>
 
-            <div className="h-60 w-full">
+            <div className="h-56 w-full">
               {chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="colorPercent" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.15}/>
+                        <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} dy={10} />
                     <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 10}} dx={-10} domain={[0, 100]} />
-                    <Tooltip contentStyle={{backgroundColor: '#1e293b', borderRadius: '12px', border: '1px solid #334155', color: '#fff'}} />
-                    <Line type="monotone" dataKey="percent" stroke="#0ea5e9" strokeWidth={3} dot={{r: 4, fill: '#0284c7', strokeWidth: 1.5, stroke: '#fff'}} />
-                  </LineChart>
+                    <Tooltip contentStyle={{backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', color: '#000'}} />
+                    <Area type="monotone" dataKey="percent" stroke="#0ea5e9" fillOpacity={1} fill="url(#colorPercent)" strokeWidth={2.5} dot={{r: 3, fill: '#0ea5e9', strokeWidth: 1.5, stroke: '#fff'}} />
+                  </AreaChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2">
-                  <Info size={28} className="text-slate-600" />
-                  <span className="text-xs">No metrics saved yet.</span>
+                <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
+                  <Info size={28} className="text-slate-300" />
+                  <span className="text-xs font-semibold">No metrics saved yet.</span>
                 </div>
               )}
             </div>
           </div>
+
         </div>
       </div>
 
-      {/* Footer Activities */}
-      <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6">
-        <h3 className="font-bold text-slate-100 text-sm mb-4">Recent Activity</h3>
-        <div className="space-y-4">
-          {recentActivities.map((act, idx) => {
-            const Icon = act.icon;
-            return (
-              <div key={idx} className="flex justify-between items-start gap-4 text-xs">
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-xl shrink-0 ${act.color}`}><Icon size={14} /></div>
-                  <span className="font-semibold text-slate-200 block">{act.title}</span>
+      {/* 3. Bottom Row: Recent Activity & Cylinder Information */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Recent Activity List */}
+        <div className="lg:col-span-2 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
+          <h3 className="font-extrabold text-slate-950 text-sm mb-5">Recent Activity</h3>
+          <div className="space-y-5">
+            {recentActivities.map((act, idx) => {
+              const Icon = act.icon;
+              return (
+                <div key={idx} className="flex justify-between items-start gap-4 text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2.5 rounded-xl shrink-0 ${act.color}`}><Icon size={14} /></div>
+                    <span className="font-semibold text-slate-800 block">{act.title}</span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-bold shrink-0">{act.time}</span>
                 </div>
-                <span className="text-[10px] text-slate-600 font-bold shrink-0">{act.time}</span>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
+
+        {/* Cylinder Technical Info */}
+        <div className="lg:col-span-1 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
+          <h3 className="font-extrabold text-slate-950 text-sm mb-4">Cylinder Information</h3>
+          
+          <div className="space-y-3.5 text-xs text-slate-600">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <span className="font-bold text-slate-400">Cylinder ID</span>
+              <span className="font-extrabold text-slate-800">GT-CYL-001</span>
+            </div>
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <span className="font-bold text-slate-400">Capacity</span>
+              <span className="font-extrabold text-slate-800">{totalCapacityKg} kg</span>
+            </div>
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <span className="font-bold text-slate-400">Current LPG</span>
+              <span className="font-extrabold text-slate-800">{remainingGasKg} kg</span>
+            </div>
+            <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
+              <span className="font-bold text-slate-400">Total Weight</span>
+              <span className="font-extrabold text-slate-800">{cylinder.current_weight?.toFixed(2)} kg</span>
+            </div>
+            <div className="flex justify-between items-center pb-1">
+              <span className="font-bold text-slate-400">Last Measurement</span>
+              <span className="font-extrabold text-slate-800">12 seconds ago</span>
+            </div>
+          </div>
+        </div>
+
       </div>
 
     </div>

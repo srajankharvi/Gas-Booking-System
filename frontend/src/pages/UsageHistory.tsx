@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { 
-  BarChart, Bar, LineChart, Line, XAxis, YAxis, 
+  BarChart, Bar, AreaChart, Area, XAxis, YAxis, 
   CartesianGrid, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import { BarChart3, LineChart as LineIcon, Flame, Calendar } from 'lucide-react';
@@ -12,30 +12,29 @@ export default function UsageHistory() {
   const [loading, setLoading] = useState(true);
   const [daysFilter, setDaysFilter] = useState(7); // 7, 30, 90
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const cylRes = await apiClient.get('/api/users/cylinders');
-        if (cylRes.data.length > 0) {
-          const cyl = cylRes.data[0];
-          setCylinder(cyl);
-
-          // Get readings history filtered by days
-          const readingsRes = await apiClient.get(`/api/iot/cylinder/${cyl.id}/readings?limit=100&days=${daysFilter}`);
-          setReadings(readingsRes.data);
-        }
-      } catch (err) {
-        console.error('Error fetching usage history data', err);
-      } finally {
-        setLoading(false);
+  const fetchData = async () => {
+    try {
+      const cylRes = await apiClient.get('/api/users/cylinders');
+      if (cylRes.data.length > 0) {
+        const cyl = cylRes.data[0];
+        setCylinder(cyl);
+        const readingsRes = await apiClient.get(`/api/iot/cylinder/${cyl.id}/readings?limit=100&days=${daysFilter}`);
+        setReadings(readingsRes.data);
       }
-    };
+    } catch (err) {
+      console.error('Error fetching usage history data', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, [daysFilter]);
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[70vh]">
+      <div className="flex flex-col items-center justify-center min-h-[50vh]">
         <div className="h-10 w-10 border-4 border-sky-500 border-t-transparent rounded-full animate-spin" />
         <span className="text-slate-400 mt-4 text-xs font-semibold">Analyzing consumption logs...</span>
       </div>
@@ -44,7 +43,6 @@ export default function UsageHistory() {
 
   if (!cylinder) return null;
 
-  // Format Recharts data (oldest first)
   const sortedReadings = [...readings].reverse();
   const lineChartData = sortedReadings.map(r => {
     const d = new Date(r.timestamp);
@@ -56,8 +54,6 @@ export default function UsageHistory() {
     };
   });
 
-  // Calculate daily consumption averages:
-  // We can group readings by date and calculate delta (max - min) weight per day.
   const consumptionByDate: { [key: string]: number[] } = {};
   sortedReadings.forEach(r => {
     const dateStr = new Date(r.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' });
@@ -71,15 +67,13 @@ export default function UsageHistory() {
     const weights = consumptionByDate[date];
     const maxW = Math.max(...weights);
     const minW = Math.min(...weights);
-    // Delta weight represents gas consumed in kg. If zero (no changes), use a small simulation value based on EMA
-    const consumed = maxW - minW > 0 ? maxW - minW : (cylinder.burn_rate_ema || 0.05) * 8.0; // 8 hrs avg active
+    const consumed = maxW - minW > 0 ? maxW - minW : (cylinder.burn_rate_ema || 0.05) * 8.0;
     return {
       date,
       consumed: parseFloat(consumed.toFixed(2))
     };
   });
 
-  // Calculate average daily consumption
   const avgDaily = barChartData.length > 0
     ? (barChartData.reduce((sum, item) => sum + item.consumed, 0) / barChartData.length).toFixed(2)
     : '0.00';
@@ -87,15 +81,10 @@ export default function UsageHistory() {
   return (
     <div className="space-y-6">
       
-      {/* Header & Filter Controls */}
-      <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-black text-slate-100 tracking-tight">Usage Analytics</h2>
-          <p className="text-slate-400 text-xs mt-1">Review historic cylinder capacities and weight consumption rates.</p>
-        </div>
-        
-        {/* Filters */}
-        <div className="flex bg-slate-800 p-1 border border-slate-700/50 rounded-2xl">
+      {/* Filters Bar */}
+      <div className="flex justify-between items-center bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
+        <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Usage Filter Timeline</span>
+        <div className="flex bg-slate-50 p-1 border border-slate-200 rounded-xl">
           {[
             { label: '7 Days', val: 7 },
             { label: '30 Days', val: 30 },
@@ -103,48 +92,49 @@ export default function UsageHistory() {
           ].map((item) => (
             <button
               key={item.val}
-              onClick={() => setDaysFilter(item.val)}
-              className={`px-4 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+              onClick={() => { setLoading(true); setDaysFilter(item.val); }}
+              className={`px-4 py-1.5 text-xs font-black rounded-lg transition-all cursor-pointer ${
                 daysFilter === item.val 
-                  ? 'bg-sky-500 text-white shadow-md' 
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-sky-500 text-white shadow-sm' 
+                  : 'text-slate-400 hover:text-slate-900'
               }`}
             >
               {item.label}
             </button>
           ))}
         </div>
-      </header>
+      </div>
 
       {/* Main summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-slate-850 border border-slate-800 rounded-3xl p-5 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-sky-500/10 rounded-2xl text-sky-400">
+        
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-sky-50 text-sky-600 rounded-xl">
             <Flame size={20} />
           </div>
           <div>
-            <span className="text-[10px] text-slate-500 uppercase tracking-widest block font-semibold">Est. Burn Rate</span>
-            <span className="text-lg font-bold text-slate-200 mt-1 block">{(cylinder.burn_rate_ema || 0.05).toFixed(3)} kg/hr</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-extrabold">Est. Burn Rate</span>
+            <span className="text-lg font-black text-slate-950 mt-0.5 block">{(cylinder.burn_rate_ema || 0.05).toFixed(3)} kg/hr</span>
           </div>
         </div>
 
-        <div className="bg-slate-850 border border-slate-800 rounded-3xl p-5 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-emerald-500/10 rounded-2xl text-emerald-400">
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
             <BarChart3 size={20} />
           </div>
           <div>
-            <span className="text-[10px] text-slate-500 uppercase tracking-widest block font-semibold">Avg. Daily Fuel</span>
-            <span className="text-lg font-bold text-slate-200 mt-1 block">{avgDaily} kg</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-extrabold">Avg. Daily Fuel</span>
+            <span className="text-lg font-black text-slate-950 mt-0.5 block">{avgDaily} kg</span>
           </div>
         </div>
 
-        <div className="bg-slate-850 border border-slate-800 rounded-3xl p-5 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-purple-500/10 rounded-2xl text-purple-400">
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center gap-4">
+          <div className="p-3 bg-purple-50 text-purple-600 rounded-xl">
             <Calendar size={20} />
           </div>
           <div>
-            <span className="text-[10px] text-slate-500 uppercase tracking-widest block font-semibold">Remaining Life</span>
-            <span className="text-lg font-bold text-slate-200 mt-1 block">
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-extrabold">Remaining Life</span>
+            <span className="text-lg font-black text-slate-950 mt-0.5 block">
               {cylinder.estimated_days ? `${cylinder.estimated_days} Days` : 'N/A'}
             </span>
           </div>
@@ -155,17 +145,23 @@ export default function UsageHistory() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
         {/* Capacity graph */}
-        <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 shadow-md">
+        <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-6">
-            <LineIcon className="text-sky-400" size={18} />
-            <h3 className="font-bold text-slate-100 text-sm">Capacity Progression (%)</h3>
+            <LineIcon className="text-sky-500" size={18} />
+            <h3 className="font-extrabold text-slate-900 text-sm">Capacity Progression (%)</h3>
           </div>
 
           <div className="h-72 w-full">
             {lineChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={lineChartData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                <AreaChart data={lineChartData}>
+                  <defs>
+                    <linearGradient id="progPercent" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.15}/>
+                      <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis 
                     dataKey="date" 
                     axisLine={false} 
@@ -181,20 +177,22 @@ export default function UsageHistory() {
                     domain={[0, 100]} 
                   />
                   <Tooltip 
-                    contentStyle={{backgroundColor: '#1e293b', borderRadius: '12px', border: '1px solid #334155', color: '#fff'}}
+                    contentStyle={{backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', color: '#000'}}
                   />
-                  <Line 
+                  <Area 
                     type="monotone" 
                     dataKey="percent" 
                     name="Gas Level %"
                     stroke="#0ea5e9" 
+                    fillOpacity={1}
+                    fill="url(#progPercent)"
                     strokeWidth={2.5} 
                     dot={false}
                   />
-                </LineChart>
+                </AreaChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-slate-500 text-xs">
+              <div className="h-full flex items-center justify-center text-slate-400 text-xs font-semibold">
                 No readings data matching selected dates.
               </div>
             )}
@@ -202,17 +200,17 @@ export default function UsageHistory() {
         </div>
 
         {/* Daily weight consumption bar graph */}
-        <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 shadow-md">
+        <div className="bg-white border border-slate-200/80 rounded-3xl p-6 shadow-sm">
           <div className="flex items-center gap-2 mb-6">
-            <BarChart3 className="text-emerald-400" size={18} />
-            <h3 className="font-bold text-slate-100 text-sm">Daily Consumption Estimates (kg)</h3>
+            <BarChart3 className="text-emerald-550" size={18} />
+            <h3 className="font-extrabold text-slate-900 text-sm">Daily Consumption Estimates (kg)</h3>
           </div>
 
           <div className="h-72 w-full">
             {barChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={barChartData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#1e293b" />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis 
                     dataKey="date" 
                     axisLine={false} 
@@ -227,7 +225,7 @@ export default function UsageHistory() {
                     dx={-10} 
                   />
                   <Tooltip 
-                    contentStyle={{backgroundColor: '#1e293b', borderRadius: '12px', border: '1px solid #334155', color: '#fff'}}
+                    contentStyle={{backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', color: '#000'}}
                   />
                   <Bar 
                     dataKey="consumed" 
@@ -238,7 +236,7 @@ export default function UsageHistory() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full flex items-center justify-center text-slate-500 text-xs">
+              <div className="h-full flex items-center justify-center text-slate-400 text-xs font-semibold">
                 No consumption records for selected dates.
               </div>
             )}

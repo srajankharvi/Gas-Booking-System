@@ -8,6 +8,7 @@ import BookingsList from './pages/BookingsList';
 import UsageHistory from './pages/UsageHistory';
 import AdminDashboard from './pages/AdminDashboard';
 import Simulator from './pages/Simulator';
+import IoTDevice from './pages/IoTDevice';
 import Layout from './components/Layout';
 
 // Auth guards for user and admin routes
@@ -73,6 +74,7 @@ function App() {
           <Route path="book" element={<BookCylinder />} />
           <Route path="bookings" element={<BookingsList />} />
           <Route path="usage" element={<UsageHistory />} />
+          <Route path="iot" element={<IoTDevice />} />
           <Route path="settings" element={<Settings />} />
           <Route path="simulator" element={<Simulator />} />
         </Route>
