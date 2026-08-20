@@ -2,6 +2,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import ResponseValidationError
 
 # Database & settings
 from database import get_database, ping_database, close_database_connection
@@ -66,15 +68,24 @@ origins = [
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://autogasbooking.vercel.app"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(ResponseValidationError)
+async def response_validation_exception_handler(request, exc):
+    logger.error(f"Response Validation Error: {exc.errors()}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error: Data schema mismatch", "errors": exc.errors()}
+    )
 
 # Register Routers
 app.include_router(auth_router.router)
