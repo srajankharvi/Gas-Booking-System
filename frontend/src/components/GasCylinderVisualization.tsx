@@ -5,11 +5,11 @@ interface GasCylinderProps {
   gasLevel: number;
   weight: number;
   tareWeight: number;
-  status: string;
+  status: string; // From API, but we'll compute our own display status based on level
   isConnected: boolean;
 }
 
-export default function GasCylinderVisualization({ gasLevel, weight, tareWeight, status }: GasCylinderProps) {
+export default function GasCylinderVisualization({ gasLevel, weight, tareWeight }: GasCylinderProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
 
@@ -17,7 +17,6 @@ export default function GasCylinderVisualization({ gasLevel, weight, tareWeight,
   const rotateX = useSpring(useMotionValue(0), { stiffness: 150, damping: 20 });
   const rotateY = useSpring(useMotionValue(0), { stiffness: 150, damping: 20 });
   
-  // Dynamic shadow translation
   const shadowX = useTransform(rotateY, [-10, 10], [10, -10]);
   const shadowY = useTransform(rotateX, [-10, 10], [15, 5]);
 
@@ -42,43 +41,45 @@ export default function GasCylinderVisualization({ gasLevel, weight, tareWeight,
     rotateY.set(0);
   };
 
+  // Clamp gas level between 0 and 100
+  const clampedLevel = Math.min(100, Math.max(0, gasLevel));
+
   // Determine color scheme based on level
   const getColorScheme = (level: number) => {
-    if (level >= 80) return {
-      liquidColor: 'rgba(16, 185, 129, 0.75)', // emerald
-      liquidGlow: 'rgba(16, 185, 129, 0.4)',
-      liquidTop: 'rgba(52, 211, 153, 0.95)',
-      gradient: 'from-emerald-500/20 via-emerald-500/40 to-emerald-600/70',
-      badge: 'bg-emerald-50 border-emerald-200 text-emerald-700',
-      glowClass: 'shadow-[0_0_30px_rgba(16,185,129,0.15)]',
+    if (level >= 75) return {
+      fillColor: 'rgba(34, 197, 94, 0.85)', // Green
+      status: 'FULL',
+      badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      dot: 'bg-emerald-500'
     };
-    if (level >= 40) return {
-      liquidColor: 'rgba(14, 165, 233, 0.75)', // sky
-      liquidGlow: 'rgba(14, 165, 233, 0.4)',
-      liquidTop: 'rgba(56, 189, 248, 0.95)',
-      gradient: 'from-sky-500/20 via-sky-500/40 to-blue-600/70',
-      badge: 'bg-sky-50 border-sky-200 text-sky-700',
-      glowClass: 'shadow-[0_0_30px_rgba(14,165,233,0.15)]',
+    if (level >= 50) return {
+      fillColor: 'rgba(163, 230, 53, 0.85)', // Yellow/Green (Lime)
+      status: 'GOOD',
+      badge: 'bg-lime-50 text-lime-700 border-lime-200',
+      dot: 'bg-lime-500'
     };
-    if (level >= 20) return {
-      liquidColor: 'rgba(245, 158, 11, 0.75)', // amber
-      liquidGlow: 'rgba(245, 158, 11, 0.4)',
-      liquidTop: 'rgba(251, 191, 36, 0.95)',
-      gradient: 'from-amber-500/20 via-amber-500/40 to-orange-600/70',
-      badge: 'bg-amber-50 border-amber-200 text-amber-700',
-      glowClass: 'shadow-[0_0_35px_rgba(245,158,11,0.2)]',
+    if (level >= 25) return {
+      fillColor: 'rgba(249, 115, 22, 0.85)', // Orange
+      status: 'MEDIUM',
+      badge: 'bg-orange-50 text-orange-700 border-orange-200',
+      dot: 'bg-orange-500'
+    };
+    if (level >= 15) return {
+      fillColor: 'rgba(239, 68, 68, 0.85)', // Orange/Red
+      status: 'LOW',
+      badge: 'bg-rose-50 text-rose-700 border-rose-200',
+      dot: 'bg-rose-500'
     };
     return {
-      liquidColor: 'rgba(239, 68, 68, 0.75)', // red
-      liquidGlow: 'rgba(239, 68, 68, 0.5)',
-      liquidTop: 'rgba(248, 113, 113, 0.95)',
-      gradient: 'from-red-500/20 via-red-500/40 to-rose-700/70',
-      badge: 'bg-rose-50 border-rose-200 text-rose-700 animate-pulse',
-      glowClass: 'shadow-[0_0_40px_rgba(239,68,68,0.25)]',
+      fillColor: 'rgba(220, 38, 38, 0.95)', // Red
+      status: 'CRITICAL',
+      badge: 'bg-red-50 text-red-700 border-red-300 animate-pulse',
+      dot: 'bg-red-600 animate-pulse',
+      glow: 'shadow-[0_0_25px_rgba(220,38,38,0.4)]'
     };
   };
 
-  const scheme = getColorScheme(gasLevel);
+  const scheme = getColorScheme(clampedLevel);
   const netWeight = Math.max(0, weight - tareWeight).toFixed(2);
 
   return (
@@ -88,16 +89,10 @@ export default function GasCylinderVisualization({ gasLevel, weight, tareWeight,
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={handleMouseLeave}
       className="flex flex-col items-center justify-center p-6 bg-white rounded-3xl shadow-sm border border-slate-200/80 w-full text-slate-800 overflow-hidden relative select-none transition-all duration-300"
-      style={{
-        perspective: '1200px',
-      }}
+      style={{ perspective: '1200px' }}
     >
-      {/* Visual Header */}
-      <div className="flex justify-between items-center w-full mb-6 relative z-30">
+      <div className="flex justify-between items-center w-full mb-8 relative z-30">
         <span className="font-extrabold text-xs uppercase tracking-wider text-slate-950">My Cylinder</span>
-        <span className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider border ${scheme.badge}`}>
-          {status}
-        </span>
       </div>
 
       <motion.div 
@@ -106,72 +101,79 @@ export default function GasCylinderVisualization({ gasLevel, weight, tareWeight,
           rotateY: rotateY,
           transformStyle: 'preserve-3d',
         }}
-        className="flex flex-col items-center justify-center relative w-full"
+        className="flex flex-row items-center justify-between w-full relative z-10"
       >
-        <div className="relative flex flex-col items-center z-10 w-full max-w-[150px]">
-          <div className="w-16 h-4 bg-gradient-to-r from-slate-500 to-slate-600 rounded-lg -mb-0.5 border border-slate-600 shadow-sm flex items-center justify-center z-30">
-            <div className="w-10 h-1.5 bg-slate-900 rounded-full" />
+        
+        {/* Left Side: Status & Percentage */}
+        <div className="flex-1 flex flex-col items-start gap-1">
+          <span className="text-[10px] font-black tracking-widest uppercase text-slate-400">Gas Left</span>
+          <span className="text-4xl font-black text-slate-800 tracking-tighter tabular-nums my-1">
+            {Math.round(clampedLevel)}%
+          </span>
+          <div className={`px-2.5 py-1 mt-1 rounded text-[9px] font-black uppercase tracking-widest border flex items-center gap-1.5 ${scheme.badge}`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${scheme.dot}`} />
+            {scheme.status}
           </div>
-
-          <div className="w-24 h-5 bg-gradient-to-r from-slate-600 to-slate-700 rounded-t-xl -mb-1 z-25 shadow-sm" />
-
-          <div 
-            className={`relative w-full h-56 bg-gradient-to-r from-red-600 via-red-500 to-red-700 rounded-[28px] border-[2px] border-red-600/40 overflow-hidden flex flex-col justify-end transition-shadow duration-500 ${scheme.glowClass}`}
-            style={{
-              transformStyle: 'preserve-3d',
-              transform: 'translateZ(10px)'
-            }}
-          >
-            <div className="absolute inset-y-0 left-0 w-6 bg-gradient-to-r from-black/25 to-transparent pointer-events-none z-30" />
-            <div className="absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-black/25 to-transparent pointer-events-none z-30" />
-            
-            <div className="absolute top-6 left-0 right-0 flex flex-col items-center justify-center opacity-15 select-none z-10 pointer-events-none">
-              <span className="font-black tracking-widest text-[9px] text-white">PROPANE-LPG</span>
-              <span className="text-[6px] font-extrabold uppercase tracking-widest text-slate-200">IoT Sensor</span>
-            </div>
-
-            <div 
-              className="absolute inset-y-6 left-[45%] right-[45%] bg-slate-950/70 border border-slate-800 rounded-full overflow-hidden z-20 shadow-inner"
-              style={{ transform: 'translateZ(1px)' }}
-            >
-              <motion.div 
-                className={`absolute bottom-0 inset-x-0 bg-gradient-to-t ${scheme.gradient} rounded-b-full`}
-                initial={{ height: 0 }}
-                animate={{ height: `${gasLevel}%` }}
-                transition={{ duration: 1.2, ease: "easeOut" }}
-              >
-                <div className="absolute inset-0 blur-[2px] opacity-75" style={{ backgroundColor: scheme.liquidGlow }} />
-                <div className="absolute top-0 left-0 right-0 -translate-y-1/2 h-2 rounded-full z-30" style={{ backgroundColor: scheme.liquidTop }} />
-              </motion.div>
-            </div>
-
-            <div className="absolute inset-0 flex flex-col items-center justify-center z-25 pointer-events-none">
-              <div className="text-center bg-slate-900/60 backdrop-blur-md rounded-2xl p-2.5 border border-slate-700/30">
-                <span className="text-3xl font-black block tracking-tighter text-white">
-                  {Math.round(gasLevel)}%
-                </span>
-                <span className="text-[7px] font-black uppercase tracking-widest text-slate-300 block">LPG Left</span>
-              </div>
-            </div>
-
-          </div>
-          
-          <div className="w-22 h-5 bg-gradient-to-r from-slate-700 to-slate-800 rounded-b-xl z-20 shadow-md" />
         </div>
 
-        <motion.div 
-          className="absolute -bottom-2 w-28 h-3 bg-slate-300 rounded-full blur-[4px] -z-10"
-          style={{
-            x: shadowX,
-            y: shadowY,
-            scale: isHovered ? 1.05 : 1,
-            opacity: isHovered ? 0.7 : 0.5
-          }}
-          transition={{ duration: 0.3 }}
-        />
+        {/* Center: The Realistic Cylinder */}
+        <div className="flex-none flex flex-col items-center relative z-20 px-2 sm:px-6">
+          
+          {/* Valve Guard/Handle */}
+          <div className="relative flex justify-center w-20 h-12 z-10">
+            {/* Guard Ring */}
+            <div className="absolute top-0 w-20 h-12 border-[5px] border-red-500 rounded-t-[24px] -z-10 shadow-sm" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 0 100%)' }} />
+            {/* Valve */}
+            <div className="absolute bottom-0 w-6 h-6 bg-gradient-to-b from-yellow-500 to-yellow-700 rounded-t-sm z-10" />
+            <div className="absolute bottom-5 w-8 h-2 bg-slate-700 rounded-sm z-10 shadow-sm" /> {/* Handwheel */}
+          </div>
+
+          {/* Cylinder Body */}
+          <div 
+            className={`relative w-36 h-64 bg-gradient-to-r from-red-100/30 via-white/40 to-red-200/20 border-[4px] border-red-600 rounded-[48px] shadow-[inset_-8px_0_15px_rgba(0,0,0,0.2),inset_8px_0_15px_rgba(255,255,255,0.5)] overflow-hidden z-20 backdrop-blur-[3px] transition-all duration-700 ${scheme.glow || ''}`}
+            style={{ transform: 'translateZ(10px)' }}
+          >
+            {/* Glass Highlights / Reflections */}
+            <div className="absolute inset-y-0 left-3 w-4 bg-gradient-to-r from-white/60 to-transparent blur-[2px] rounded-full pointer-events-none z-30" />
+            <div className="absolute inset-y-0 right-2 w-6 bg-gradient-to-l from-black/30 to-transparent blur-[4px] rounded-full pointer-events-none z-30" />
+            <div className="absolute top-4 left-6 right-6 h-12 bg-white/30 rounded-[30px] blur-[6px] pointer-events-none z-30" />
+            <div className="absolute bottom-4 left-8 right-8 h-6 bg-black/20 rounded-[30px] blur-[5px] pointer-events-none z-30" />
+
+            {/* Dynamic Liquid/Gas Fill */}
+            <motion.div
+              className="absolute bottom-0 left-0 right-0 z-10 transition-all duration-1000 bg-gradient-to-r from-red-800 via-red-500 to-red-900 shadow-[inset_0_-10px_20px_rgba(0,0,0,0.4)]"
+              initial={{ height: '0%' }}
+              animate={{ height: `${clampedLevel}%` }}
+              transition={{ duration: 1.5, type: 'spring', bounce: 0.15 }}
+            >
+              {/* 3D Meniscus (Top surface of the liquid) */}
+              {clampedLevel > 0 && clampedLevel < 100 && (
+                <div className="absolute top-0 left-[-2px] right-[-2px] h-5 -translate-y-1/2 rounded-[100%] bg-gradient-to-r from-red-700 via-red-400 to-red-800 border-[1.5px] border-red-300 shadow-[inset_0_-2px_4px_rgba(0,0,0,0.3),0_2px_4px_rgba(220,38,38,0.5)] z-20 flex items-center justify-center pointer-events-none">
+                  {/* Liquid surface reflection */}
+                  <div className="absolute top-0.5 left-4 right-4 h-1 bg-white/40 rounded-full blur-[1px]" />
+                </div>
+              )}
+            </motion.div>
+          </div>
+
+          {/* Base Ring */}
+          <div className="w-24 h-4 border-[4px] border-t-0 border-red-500 bg-red-600 rounded-b-xl -mt-1 z-10 shadow-md" />
+          
+          {/* Floor Shadow */}
+          <motion.div 
+            className="absolute -bottom-3 w-32 h-4 bg-slate-300 rounded-full blur-[5px] -z-10"
+            style={{ x: shadowX, y: shadowY, scale: isHovered ? 1.05 : 1, opacity: isHovered ? 0.7 : 0.5 }}
+            transition={{ duration: 0.3 }}
+          />
+        </div>
+
+        {/* Right Side: Empty to keep cylinder centered */}
+        <div className="flex-1"></div>
+
       </motion.div>
 
-      <div className="grid grid-cols-2 gap-4 w-full mt-6 bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 shadow-inner relative z-30">
+      {/* Weight Info Cards */}
+      <div className="grid grid-cols-2 gap-4 w-full mt-10 bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 shadow-inner relative z-30">
         <div className="text-center">
           <span className="block text-[8px] font-extrabold uppercase tracking-wider text-slate-400">Gross Weight</span>
           <span className="text-sm font-black text-slate-800 mt-0.5 block">{weight.toFixed(2)} kg</span>
@@ -181,7 +183,6 @@ export default function GasCylinderVisualization({ gasLevel, weight, tareWeight,
           <span className="text-sm font-black text-sky-500 mt-0.5 block">{netWeight} kg</span>
         </div>
       </div>
-
     </div>
   );
 }

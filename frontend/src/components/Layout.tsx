@@ -115,7 +115,6 @@ export default function Layout() {
   const menuItems = user.role === 'admin' ? [
     { name: 'Admin Dashboard', path: '/admin', icon: ShieldCheck },
     { name: 'Settings', path: '/admin/settings', icon: Settings },
-    { name: 'IoT Simulator', path: '/admin/simulator', icon: Terminal },
   ] : [
     { name: 'Dashboard', path: '/', icon: Home },
     { name: 'Book LPG', path: '/book', icon: Calendar },
@@ -123,7 +122,6 @@ export default function Layout() {
     { name: 'Usage Analytics', path: '/usage', icon: BarChart3 },
     { name: 'IoT Device', path: '/iot', icon: Cpu },
     { name: 'Settings', path: '/settings', icon: Settings },
-    { name: 'IoT Simulator', path: '/simulator', icon: Terminal },
   ];
 
   // Helper to get active page title
