@@ -8,7 +8,7 @@ load_dotenv()
 # Extract exactly as requested by user
 MONGO_URI = os.getenv("MONGO_URI")
 MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "gas_iot")
-IOT_API_KEY = os.getenv("IOT_API_KEY")
+DEVICE_API_KEY = os.getenv("DEVICE_API_KEY")
 LOW_WEIGHT_THRESHOLD = float(os.getenv("LOW_WEIGHT_THRESHOLD", "10"))
 CRITICAL_WEIGHT_THRESHOLD = float(os.getenv("CRITICAL_WEIGHT_THRESHOLD", "5"))
 
@@ -21,7 +21,7 @@ if not MONGO_URI:
 class Settings(BaseSettings):
     MONGODB_URL: str = MONGO_URI or "mongodb://localhost:27017"
     DATABASE_NAME: str = MONGO_DB_NAME
-    IOT_API_KEY: str = IOT_API_KEY or "fallback-key"
+    DEVICE_API_KEY: str = DEVICE_API_KEY or "fallback-key"
     LOW_WEIGHT_THRESHOLD: float = LOW_WEIGHT_THRESHOLD
     CRITICAL_WEIGHT_THRESHOLD: float = CRITICAL_WEIGHT_THRESHOLD
     

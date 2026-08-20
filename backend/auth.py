@@ -17,22 +17,22 @@ def verify_password(plain_password, hashed_password):
 from fastapi import Header
 
 def verify_iot_api_key(x_api_key: str = Header(default=None, alias="X-API-Key")):
-    if not settings.IOT_API_KEY:
+    if not settings.DEVICE_API_KEY:
         raise HTTPException(
             status_code=500,
-            detail="IoT API authentication is not configured"
+            detail="Device API authentication is not configured"
         )
         
     if not x_api_key:
         raise HTTPException(
             status_code=401,
-            detail="Missing X-API-Key header"
+            detail="Missing Device API Key"
         )
         
-    if x_api_key != settings.IOT_API_KEY:
+    if x_api_key != settings.DEVICE_API_KEY:
         raise HTTPException(
             status_code=401,
-            detail="Invalid X-API-Key"
+            detail="Invalid Device API Key"
         )
         
     return True
