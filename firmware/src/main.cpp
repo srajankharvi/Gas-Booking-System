@@ -14,7 +14,7 @@ const char* ssid = "S A J U";
 const char* password = "********";
 const char* API_URL = "https://gastrack-backend.onrender.com/api/iot/cylinder/readings";
 const char* DEVICE_API_KEY = "sec_iot_7890abcdef123456";
-const char* device_id = "GAS001";
+const char* device_id = "GT-DEMODEVICEKEY";
 
 // Sleep config
 const uint64_t SLEEP_SECONDS = 900; // 15 minutes
