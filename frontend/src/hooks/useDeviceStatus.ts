@@ -3,6 +3,8 @@ import { apiClient, API_BASE_URL } from '../api/client';
 
 export interface DeviceStatus {
   percentage: number;
+  weight: number;
+  status: string;
   isEstimated: boolean;
   lastUpdated: string;
   isOnline: boolean;
@@ -17,6 +19,8 @@ const POLL_INTERVAL_MS = 45_000;
 export function useDeviceStatus(cylinderId: string | null): DeviceStatus {
   const [status, setStatus] = useState<DeviceStatus>({
     percentage: 0,
+    weight: 0,
+    status: 'NORMAL',
     isEstimated: false,
     lastUpdated: '',
     isOnline: false,
@@ -32,6 +36,8 @@ export function useDeviceStatus(cylinderId: string | null): DeviceStatus {
         const latest = res.data[0];
         setStatus({
           percentage: latest.percent ?? 0,
+          weight: latest.weight ?? 0,
+          status: latest.status ?? 'NORMAL',
           isEstimated: latest.is_estimated ?? false,
           lastUpdated: latest.timestamp ?? new Date().toISOString(),
           isOnline: true,
@@ -70,6 +76,8 @@ export function useDeviceStatus(cylinderId: string | null): DeviceStatus {
           if (data.event === 'cylinder_update') {
             setStatus({
               percentage: data.data.percent ?? 0,
+              weight: data.data.weight ?? 0,
+              status: data.data.status ?? 'NORMAL',
               isEstimated: false,
               lastUpdated: data.data.last_seen ?? new Date().toISOString(),
               isOnline: true,

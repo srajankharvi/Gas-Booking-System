@@ -166,9 +166,11 @@ export default function Dashboard() {
   }
 
   // Use values from the device status hook if available, otherwise fallback to cylinder state
-  const currentPercent = deviceStatus.percentage > 0 ? deviceStatus.percentage : cylinder.current_percent;
   const isOnline = deviceStatus.isOnline;
   const isEstimated = deviceStatus.isEstimated;
+  const currentPercent = isOnline ? deviceStatus.percentage : cylinder.current_percent;
+  const currentWeight = isOnline ? deviceStatus.weight : cylinder.current_weight;
+  const currentStatus = isOnline ? deviceStatus.status : cylinder.status;
 
   const chartData = [...readings].reverse().map(r => {
     const d = new Date(r.timestamp);
@@ -178,9 +180,24 @@ export default function Dashboard() {
     };
   });
 
-  const remainingGasKg = cylinder.current_weight ? Math.max(0, cylinder.current_weight - cylinder.tare_weight).toFixed(2) : '0.00';
+  const remainingGasKg = currentWeight ? Math.max(0, currentWeight - cylinder.tare_weight).toFixed(2) : '0.00';
   const totalCapacityKg = (cylinder.full_weight - cylinder.tare_weight).toFixed(2);
-  const estimatedDays = isOnline ? (mockCylinderStore.get().estimated_days || '6') : '6';
+  const estimatedDays = cylinder.estimated_days ?? 0;
+  
+  const dailyConsumption = cylinder.burn_rate_ema ? (cylinder.burn_rate_ema * 24).toFixed(2) : '0.00';
+  
+  const emptyDate = new Date();
+  emptyDate.setDate(emptyDate.getDate() + Math.floor(estimatedDays));
+  const bookDate = new Date(emptyDate);
+  bookDate.setDate(bookDate.getDate() - 3);
+  
+  const formatTimeAgo = (dateStr: string) => {
+    if (!dateStr) return 'Unknown';
+    const seconds = Math.floor((new Date().getTime() - new Date(dateStr).getTime()) / 1000);
+    if (seconds < 60) return `${seconds} seconds ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)} mins ago`;
+    return `${Math.floor(seconds / 3600)} hours ago`;
+  };
 
   return (
     <div className="space-y-6">
@@ -210,10 +227,10 @@ export default function Dashboard() {
         <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between min-h-[110px]">
           <div>
             <span className="text-[10px] text-slate-400 uppercase tracking-wider font-extrabold block">Daily Consumption</span>
-            <span className="text-2xl font-black text-slate-950 block mt-1.5">0.82 kg/day</span>
+            <span className="text-2xl font-black text-slate-950 block mt-1.5">{dailyConsumption} kg/day</span>
           </div>
           <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5 mt-1">
-            <TrendingDown size={12} /> 8.2% this week
+            <TrendingDown size={12} /> Based on historical usage
           </span>
         </div>
 
@@ -226,7 +243,7 @@ export default function Dashboard() {
             </span>
           </div>
           <span className="text-[10px] text-slate-500 font-bold block mt-1">
-            Updated {isOnline ? '12 sec ago' : '6h ago'}
+            Updated {formatTimeAgo(isOnline ? deviceStatus.lastUpdated : cylinder.last_seen)}
           </span>
         </div>
 
@@ -239,8 +256,9 @@ export default function Dashboard() {
         <div className="lg:col-span-1 flex flex-col">
           <GasCylinderVisualization 
             gasLevel={currentPercent}
-            weight={cylinder.current_weight}
-            status={cylinder.status}
+            weight={currentWeight}
+            tareWeight={cylinder.tare_weight}
+            status={currentStatus}
             isConnected={isOnline}
           />
         </div>
@@ -290,15 +308,19 @@ export default function Dashboard() {
                 <div className="space-y-2.5 text-xs text-slate-700 border-y border-slate-100 py-3.5 mb-4">
                   <div className="flex justify-between">
                     <span className="font-semibold text-slate-500">Average usage</span>
-                    <span className="font-bold">0.82 kg/day</span>
+                    <span className="font-bold">{dailyConsumption} kg/day</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="font-semibold text-slate-500">Estimated empty date</span>
-                    <span className="font-bold text-rose-600">August 26, 2026</span>
+                    <span className="font-bold text-rose-600">
+                      {emptyDate.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="font-semibold text-slate-500">Recommended booking</span>
-                    <span className="font-bold text-amber-600">August 23, 2026</span>
+                    <span className="font-bold text-amber-600">
+                      {bookDate.toLocaleDateString([], { month: 'long', day: 'numeric', year: 'numeric' })}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -408,8 +430,8 @@ export default function Dashboard() {
           
           <div className="space-y-3.5 text-xs text-slate-600">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
-              <span className="font-bold text-slate-400">Cylinder ID</span>
-              <span className="font-extrabold text-slate-800">GT-CYL-001</span>
+              <span className="font-bold text-slate-400">Cylinder Name</span>
+              <span className="font-extrabold text-slate-800">{cylinder.name}</span>
             </div>
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="font-bold text-slate-400">Capacity</span>
@@ -421,11 +443,11 @@ export default function Dashboard() {
             </div>
             <div className="flex justify-between items-center border-b border-slate-100 pb-2.5">
               <span className="font-bold text-slate-400">Total Weight</span>
-              <span className="font-extrabold text-slate-800">{cylinder.current_weight?.toFixed(2)} kg</span>
+              <span className="font-extrabold text-slate-800">{currentWeight?.toFixed(2)} kg</span>
             </div>
             <div className="flex justify-between items-center pb-1">
               <span className="font-bold text-slate-400">Last Measurement</span>
-              <span className="font-extrabold text-slate-800">12 seconds ago</span>
+              <span className="font-extrabold text-slate-800">{formatTimeAgo(isOnline ? deviceStatus.lastUpdated : cylinder.last_seen)}</span>
             </div>
           </div>
         </div>

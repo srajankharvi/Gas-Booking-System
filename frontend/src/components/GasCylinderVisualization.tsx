@@ -4,11 +4,12 @@ import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 interface GasCylinderProps {
   gasLevel: number;
   weight: number;
+  tareWeight: number;
   status: string;
   isConnected: boolean;
 }
 
-export default function GasCylinderVisualization({ gasLevel, weight, status }: GasCylinderProps) {
+export default function GasCylinderVisualization({ gasLevel, weight, tareWeight, status }: GasCylinderProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = useState(false);
 
@@ -78,7 +79,7 @@ export default function GasCylinderVisualization({ gasLevel, weight, status }: G
   };
 
   const scheme = getColorScheme(gasLevel);
-  const netWeight = Math.max(0, weight - 5.0).toFixed(2);
+  const netWeight = Math.max(0, weight - tareWeight).toFixed(2);
 
   return (
     <div 
