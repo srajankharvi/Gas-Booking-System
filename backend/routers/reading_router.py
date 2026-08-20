@@ -77,11 +77,12 @@ async def create_reading(
             
         time_diff_hours = (timestamp - prev_time).total_seconds() / 3600.0
         
-        if time_diff_hours > 0.016:
+        if time_diff_hours > 1.0:
             weight_drop = prev_reading["weight"] - reading.weight
-            if 0 < weight_drop < 4.0:
+            # Only count drops greater than 50g (noise threshold) and less than 4kg (not a refill/error)
+            if 0.05 < weight_drop < 4.0:
                 observed_rate = weight_drop / time_diff_hours
-                alpha = 0.2
+                alpha = 0.1 # Slower adaptation to prevent sudden spikes
                 new_ema = alpha * observed_rate + (1 - alpha) * new_ema
                 
     # Update cylinder status using exact weight thresholds from env
