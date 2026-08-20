@@ -12,6 +12,24 @@ export default function Login() {
   
   const navigate = useNavigate();
 
+  const handleQuickLogin = (role: 'user' | 'admin') => {
+    localStorage.setItem('token', 'MOCK-DEVELOPMENT-JWT-TOKEN');
+    localStorage.setItem('user', JSON.stringify({
+      id: role === 'admin' ? 'demo-admin-id' : 'demo-user-id',
+      name: role === 'admin' ? 'John Admin' : 'John User',
+      email: role === 'admin' ? 'admin@gastrack.com' : 'user@gastrack.com',
+      mobile: '9876543210',
+      address: '123 Smart Street, Tech City',
+      role: role,
+      created_at: new Date().toISOString()
+    }));
+    if (role === 'admin') {
+      navigate('/admin');
+    } else {
+      navigate('/');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
@@ -130,9 +148,24 @@ export default function Login() {
               </button>
             </div>
           </form>
-          
-          <div className="mt-6 border-t border-slate-700/50 pt-6 text-center text-xs text-slate-500">
-            For demonstration, register an admin user with an email ending in <code className="text-sky-400 font-mono">admin@gastrack.com</code> or use email <code className="text-sky-400 font-mono">admin@gmail.com</code>.
+          <div className="mt-6 border-t border-slate-700/50 pt-6">
+            <p className="text-center text-xs font-semibold text-slate-500 mb-3">Quick Demo Access</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('user')}
+                className="flex items-center justify-center py-2 px-3 bg-slate-900 border border-slate-700/80 hover:bg-slate-7.5 hover:border-slate-600 rounded-xl text-xs font-bold text-sky-400 cursor-pointer transition-all"
+              >
+                👤 User Dashboard
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('admin')}
+                className="flex items-center justify-center py-2 px-3 bg-slate-900 border border-slate-700/80 hover:bg-slate-7.5 hover:border-slate-600 rounded-xl text-xs font-bold text-indigo-400 cursor-pointer transition-all"
+              >
+                🔑 Admin Dashboard
+              </button>
+            </div>
           </div>
         </div>
       </div>

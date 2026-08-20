@@ -10,17 +10,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import Simulator from './pages/Simulator';
 import Layout from './components/Layout';
 
-// Unconditionally auto-login default student user session for demonstration
-localStorage.setItem('token', 'MOCK-DEVELOPMENT-JWT-TOKEN');
-localStorage.setItem('user', JSON.stringify({
-  id: 'demo-user-id',
-  name: 'John Student',
-  email: 'demo@gastrack.com',
-  mobile: '9876543210',
-  address: '123 Smart Street, Tech City',
-  role: 'admin',
-  created_at: new Date().toISOString()
-}));
+// Auth guards for user and admin routes
 
 // Guard for standard user routes
 const UserRoute = ({ children }: { children: React.ReactNode }) => {
