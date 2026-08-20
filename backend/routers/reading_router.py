@@ -54,6 +54,7 @@ async def create_reading(
         timestamp = timestamp.replace(tzinfo=timezone.utc)
         
     db_reading = {
+        "device_id": reading.device_id,
         "cylinder_id": cylinder_id,
         "weight": reading.weight,
         "temperature": reading.temperature,
@@ -153,7 +154,15 @@ async def create_reading(
                 })
                 if not active_booking:
                     booking_id = f"GAS-AUTO-{secrets.token_hex(4).upper()}"
-                    user = await db.users.find_one({"_id": ObjectId(user_id)})
+                    try:
+                        user = await db.users.find_one({"_id": ObjectId(user_id)})
+                    except:
+                        # Fallback for mock/demo users
+                        user = await db.users.find_one({"id": user_id})
+                    
+                    if not user:
+                        user = {}
+                        
                     new_booking = {
                         "booking_id": booking_id,
                         "user_id": user_id,
@@ -257,5 +266,7 @@ async def get_cylinder_readings(
     cursor = db.sensor_readings.find(query).sort([("timestamp", -1)]).limit(limit)
     async for doc in cursor:
         doc["id"] = str(doc["_id"])
+        if "device_id" not in doc:
+            doc["device_id"] = cylinder_id
         readings.append(schemas.ReadingResponse(**doc))
     return readings
