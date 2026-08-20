@@ -11,6 +11,13 @@ export interface DeviceStatus {
 }
 
 const POLL_INTERVAL_MS = 45_000;
+const ONLINE_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
+
+function checkIsOnline(timestampStr: string | null | undefined): boolean {
+  if (!timestampStr) return false;
+  const timeDiff = Date.now() - new Date(timestampStr).getTime();
+  return timeDiff < ONLINE_THRESHOLD_MS;
+}
 
 /**
  * Hook that polls a device status endpoint and listens to
@@ -34,13 +41,14 @@ export function useDeviceStatus(cylinderId: string | null): DeviceStatus {
       const res = await apiClient.get(`/api/iot/cylinder/${cylinderId}/readings?limit=1`);
       if (res.data && res.data.length > 0) {
         const latest = res.data[0];
+        const lastUpdated = latest.timestamp ?? new Date().toISOString();
         setStatus({
           percentage: latest.percent ?? 0,
           weight: latest.weight ?? 0,
           status: latest.status ?? 'NORMAL',
           isEstimated: latest.is_estimated ?? false,
-          lastUpdated: latest.timestamp ?? new Date().toISOString(),
-          isOnline: true,
+          lastUpdated: lastUpdated,
+          isOnline: checkIsOnline(lastUpdated),
         });
       }
     } catch {
@@ -74,13 +82,14 @@ export function useDeviceStatus(cylinderId: string | null): DeviceStatus {
         try {
           const data = JSON.parse(event.data);
           if (data.event === 'cylinder_update') {
+            const lastUpdated = data.data.last_seen ?? new Date().toISOString();
             setStatus({
               percentage: data.data.percent ?? 0,
               weight: data.data.weight ?? 0,
               status: data.data.status ?? 'NORMAL',
               isEstimated: false,
-              lastUpdated: data.data.last_seen ?? new Date().toISOString(),
-              isOnline: true,
+              lastUpdated: lastUpdated,
+              isOnline: checkIsOnline(lastUpdated),
             });
           }
         } catch { /* ignore malformed */ }

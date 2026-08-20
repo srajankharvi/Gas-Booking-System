@@ -9,14 +9,6 @@ import { apiClient } from '../api/client';
 import GasCylinderVisualization from '../components/GasCylinderVisualization';
 import LowGasNotification from '../components/LowGasNotification';
 import { useDeviceStatus } from '../hooks/useDeviceStatus';
-import { 
-  mockCylinderStore, 
-  mockHistoricalReadings, 
-  mockBookingsStore,
-  mockActivitiesStore,
-  isMockModeEnabled 
-} from '../mock/gasMockData';
-
 export default function Dashboard() {
   const [cylinder, setCylinder] = useState<any>(null);
   const [readings, setReadings] = useState<any[]>([]);
@@ -35,48 +27,41 @@ export default function Dashboard() {
         setCylinder(primaryCyl);
         const readingsRes = await apiClient.get(`/api/iot/cylinder/${primaryCyl.id}/readings?limit=15`);
         setReadings(readingsRes.data);
-      } else if (isMockModeEnabled()) {
-        const mockCyl = mockCylinderStore.get();
-        setCylinder(mockCyl);
-        setReadings(mockHistoricalReadings);
       } else {
         setCylinder(null);
         setReadings([]);
       }
 
       let active = null;
-      if (isMockModeEnabled() && (!cylRes.data || cylRes.data.length === 0)) {
-        const bookings = mockBookingsStore.get();
-        active = bookings.find((b: any) => 
+      try {
+        const bookingsRes = await apiClient.get('/api/bookings');
+        active = bookingsRes.data.find((b: any) => 
           ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status)
         );
-      } else {
-        try {
-          const bookingsRes = await apiClient.get('/api/bookings');
-          active = bookingsRes.data.find((b: any) => 
-            ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status)
-          );
-        } catch (e) {}
-      }
+      } catch (e) {}
       setActiveBooking(active || null);
       
       const activityList: any[] = [];
-      if (cylRes.data.length > 0) {
+      try {
+        const notifRes = await apiClient.get('/api/notifications');
+        const notifications = notifRes.data.slice(0, 5); // Take top 5
+        notifications.forEach((notif: any) => {
+          activityList.push({
+            title: notif.title,
+            time: new Date(notif.created_at).toLocaleDateString(),
+            icon: notif.type.includes('gas') ? Flame : Package,
+            color: notif.type.includes('critical') ? 'text-rose-600 bg-rose-50' : 'text-sky-600 bg-sky-50'
+          });
+        });
+      } catch (e) {}
+
+      if (activityList.length === 0 && cylRes.data.length > 0) {
         const cyl = cylRes.data[0];
         activityList.push({
           title: `Cylinder status: ${cyl.status}`,
           time: cyl.last_seen ? new Date(cyl.last_seen).toLocaleTimeString() : 'Just now',
           icon: Flame,
           color: 'text-sky-600 bg-sky-50'
-        });
-      } else if (isMockModeEnabled()) {
-        mockActivitiesStore.get().forEach((act) => {
-          activityList.push({
-            title: act.title,
-            time: act.time,
-            icon: act.title.includes('level') ? Flame : (act.title.includes('connected') ? Zap : Package),
-            color: act.title.includes('low') ? 'text-rose-600 bg-rose-50' : 'text-sky-600 bg-sky-50'
-          });
         });
       }
 
@@ -99,48 +84,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchDashboardData();
-
-    let unsubscribeCyl: (() => void) | null = null;
-    let unsubscribeBookings: (() => void) | null = null;
-    let unsubscribeActivities: (() => void) | null = null;
-
-    if (isMockModeEnabled()) {
-      unsubscribeCyl = mockCylinderStore.subscribe(() => {
-        apiClient.get('/api/users/cylinders').then(res => {
-          if (res.data.length === 0) setCylinder(mockCylinderStore.get());
-        }).catch(() => setCylinder(mockCylinderStore.get()));
-      });
-
-      unsubscribeBookings = mockBookingsStore.subscribe(() => {
-        apiClient.get('/api/users/cylinders').then(res => {
-          if (res.data.length === 0) {
-            const bookings = mockBookingsStore.get();
-            const active = bookings.find((b: any) => ['Pending', 'Confirmed', 'Processing', 'Out for Delivery'].includes(b.status));
-            setActiveBooking(active || null);
-          }
-        });
-      });
-
-      unsubscribeActivities = mockActivitiesStore.subscribe(() => {
-        apiClient.get('/api/users/cylinders').then(res => {
-          if (res.data.length === 0) {
-            const activityList = mockActivitiesStore.get().map((act: any) => ({
-              title: act.title,
-              time: act.time,
-              icon: act.title.includes('level') ? Flame : (act.title.includes('connected') ? Zap : Package),
-              color: act.title.includes('low') ? 'text-rose-600 bg-rose-50' : 'text-sky-600 bg-sky-50'
-            }));
-            setRecentActivities(activityList);
-          }
-        });
-      });
-    }
-
-    return () => {
-      if (unsubscribeCyl) unsubscribeCyl();
-      if (unsubscribeBookings) unsubscribeBookings();
-      if (unsubscribeActivities) unsubscribeActivities();
-    };
   }, []);
 
   if (loading) {
