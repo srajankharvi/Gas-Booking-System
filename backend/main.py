@@ -123,6 +123,7 @@ def read_root():
     }
 
 @app.get("/api/health")
+@app.get("/health")
 async def health_check():
     is_connected = await ping_database()
     return {
