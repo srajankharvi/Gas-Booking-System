@@ -191,14 +191,21 @@ void loop() {
   if (scale.wait_ready_timeout(1000)) {
     // Take average of 10 readings for stability
     float raw_weight = scale.get_units(10);
+    long raw_adc = scale.get_value(10);
+    
+    Serial.print("Raw ADC Value (no offset/scale): ");
+    Serial.println(raw_adc);
+    
+    Serial.print("Raw Weight reading (before threshold): ");
+    Serial.println(raw_weight, 3); // Print with 3 decimal places
     
     // Configurable zero threshold to ignore noise
     if (raw_weight > -0.05 && raw_weight < 0.05) {
-        raw_weight = 0.00;
+        // raw_weight = 0.00; // Commented out for debugging
     }
     
-    Serial.print("Weight reading: ");
-    Serial.print(raw_weight);
+    Serial.print("Final Weight reading: ");
+    Serial.print(raw_weight, 3);
     Serial.println(" kg");
     
     Serial.println("Sending data to server...");
