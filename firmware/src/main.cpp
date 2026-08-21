@@ -184,7 +184,11 @@ void setup() {
     runCalibrationMode();
   }
 
-  if (is_ready) {
+  // End of setup
+}
+
+void loop() {
+  if (scale.wait_ready_timeout(1000)) {
     // Take average of 10 readings for stability
     float raw_weight = scale.get_units(10);
     
@@ -198,18 +202,13 @@ void setup() {
     Serial.println(" kg");
     
     Serial.println("Sending data to server...");
-    connectWiFi();
+    if (WiFi.status() != WL_CONNECTED) {
+        connectWiFi();
+    }
     sendReading(raw_weight);
   } else {
     Serial.println("HX711 not ready. Skipping API request.");
   }
   
-  preferences.end();
-  Serial.println("Going to deep sleep...");
-  esp_sleep_enable_timer_wakeup(SLEEP_SECONDS * 1000000ULL);
-  esp_deep_sleep_start();
-}
-
-void loop() {
-  // Unused due to deep sleep
+  delay(5000); // 5 seconds delay for testing
 }
