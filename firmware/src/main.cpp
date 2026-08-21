@@ -191,9 +191,15 @@ void loop() {
   if (scale.wait_ready_timeout(1000)) {
     // Take average of 10 readings for stability
     float raw_weight = scale.get_units(10);
-    long raw_adc = scale.get_value(10);
     
-    Serial.print("Raw ADC Value (no offset/scale): ");
+    // Get the ABSOLUTE raw value directly from the chip (no offset)
+    long absolute_raw = scale.read();
+    long raw_adc = scale.get_value(10); // With offset
+    
+    Serial.print("Absolute Chip Value (scale.read): ");
+    Serial.println(absolute_raw);
+    
+    Serial.print("Raw ADC Value (with offset): ");
     Serial.println(raw_adc);
     
     Serial.print("Raw Weight reading (before threshold): ");
