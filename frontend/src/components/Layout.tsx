@@ -273,11 +273,7 @@ export default function Layout() {
           </div>
           
           <div className="flex items-center gap-4">
-            {/* IoT status indicator */}
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs font-bold text-slate-600">
-              <span className={`h-2.5 w-2.5 rounded-full ${isOnline ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-              <span>{isOnline ? 'ESP32 Connected' : 'Device Offline'}</span>
-            </div>
+
 
             {/* Notification trigger */}
             <button 

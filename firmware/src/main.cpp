@@ -192,25 +192,12 @@ void loop() {
     // Take average of 10 readings for stability
     float raw_weight = scale.get_units(10);
     
-    // Get the ABSOLUTE raw value directly from the chip (no offset)
-    long absolute_raw = scale.read();
-    long raw_adc = scale.get_value(10); // With offset
-    
-    Serial.print("Absolute Chip Value (scale.read): ");
-    Serial.println(absolute_raw);
-    
-    Serial.print("Raw ADC Value (with offset): ");
-    Serial.println(raw_adc);
-    
-    Serial.print("Raw Weight reading (before threshold): ");
-    Serial.println(raw_weight, 3); // Print with 3 decimal places
-    
-    // Configurable zero threshold to ignore noise
+    // Configurable zero threshold to ignore noise (clamps tiny fluctuations to 0)
     if (raw_weight > -0.05 && raw_weight < 0.05) {
-        // raw_weight = 0.00; // Commented out for debugging
+        raw_weight = 0.00;
     }
     
-    Serial.print("Final Weight reading: ");
+    Serial.print("Weight reading: ");
     Serial.print(raw_weight, 3);
     Serial.println(" kg");
     
@@ -223,5 +210,6 @@ void loop() {
     Serial.println("HX711 not ready. Skipping API request.");
   }
   
-  delay(5000); // 5 seconds delay for testing
+  // Real-time monitoring for demonstration (5 second updates)
+  delay(5000); 
 }

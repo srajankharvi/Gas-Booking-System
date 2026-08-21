@@ -101,8 +101,8 @@ export default function Dashboard() {
         <Info size={48} className="mx-auto text-amber-500 mb-4" />
         <h2 className="text-xl font-black text-slate-900">No Cylinders Linked</h2>
         <p className="text-slate-500 mt-2 text-sm leading-relaxed">There are no active cylinders associated with your account. Please configure your ESP32 device.</p>
-        <Link to="/simulator" className="mt-5 inline-flex px-5 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-black text-xs rounded-xl shadow-md cursor-pointer transition-colors">
-          Configure Simulator
+        <Link to="/iot" className="mt-5 inline-flex px-5 py-2.5 bg-sky-500 hover:bg-sky-600 text-white font-black text-xs rounded-xl shadow-md cursor-pointer transition-colors">
+          Connect Hardware Device
         </Link>
       </div>
     );
