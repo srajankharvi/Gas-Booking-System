@@ -189,8 +189,8 @@ void setup() {
 
 void loop() {
   if (scale.wait_ready_timeout(1000)) {
-    // Take average of 10 readings for stability
-    float raw_weight = scale.get_units(10);
+    // Reverse connection fix: multiply by -1 to make negative weight positive
+    float raw_weight = scale.get_units(10) * -1.0;
     
     // Configurable zero threshold to ignore noise (clamps tiny fluctuations to 0)
     if (raw_weight > -0.05 && raw_weight < 0.05) {

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Activity, Home, Calendar, Clock, BarChart3, Bell, Settings, 
-  Terminal, ShieldCheck, LogOut, Menu, X, CheckSquare, Trash2, Cpu, HelpCircle
+  ShieldCheck, LogOut, Menu, X, CheckSquare, Trash2, Cpu, HelpCircle
 } from 'lucide-react';
 import { apiClient, API_BASE_URL } from '../api/client';
 
@@ -12,7 +12,7 @@ export default function Layout() {
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
-  const [isOnline, setIsOnline] = useState(true);
+  const [_isOnline, setIsOnline] = useState(true);
   const [ws, setWs] = useState<WebSocket | null>(null);
   
   const location = useLocation();

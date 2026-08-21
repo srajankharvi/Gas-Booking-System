@@ -11,7 +11,7 @@ export interface DeviceStatus {
 }
 
 const POLL_INTERVAL_MS = 45_000;
-const ONLINE_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
+const ONLINE_THRESHOLD_MS = 15 * 1000; // 15 seconds for quick disconnect detection
 
 function checkIsOnline(timestampStr: string | null | undefined): boolean {
   if (!timestampStr) return false;
@@ -87,13 +87,14 @@ export function useDeviceStatus(cylinderId: string | null): DeviceStatus {
           const data = JSON.parse(event.data);
           if (data.event === 'cylinder_update') {
             const lastUpdated = data.data.last_seen ?? new Date().toISOString();
+            const explicitIsOnline = data.data.is_online;
             setStatus({
               percentage: data.data.percent ?? 0,
               weight: data.data.weight ?? 0,
               status: data.data.status ?? 'NORMAL',
               isEstimated: false,
               lastUpdated: lastUpdated,
-              isOnline: checkIsOnline(lastUpdated),
+              isOnline: explicitIsOnline !== undefined ? explicitIsOnline : checkIsOnline(lastUpdated),
             });
           }
         } catch { /* ignore malformed */ }
@@ -103,6 +104,22 @@ export function useDeviceStatus(cylinderId: string | null): DeviceStatus {
 
     return () => { if (ws) ws.close(); };
   }, [cylinderId]);
+
+  // Fast offline detection interval
+  useEffect(() => {
+    const checkInterval = setInterval(() => {
+      setStatus(prev => {
+        if (!prev.isOnline) return prev; // Already offline
+        const stillOnline = checkIsOnline(prev.lastUpdated);
+        if (stillOnline !== prev.isOnline) {
+          return { ...prev, isOnline: stillOnline };
+        }
+        return prev;
+      });
+    }, 2000); // Check every 2 seconds
+
+    return () => clearInterval(checkInterval);
+  }, []);
 
   return status;
 }
